@@ -1,0 +1,39 @@
+# ark-analytics 設定ファイル
+# 機密情報は環境変数で管理（このファイルにAPIキーを直書きしない）
+
+gcp:
+  project_id: "ark-hd-analytics"
+  dataset_staging: "staging"
+  dataset_marts: "marts"
+  dataset_reports: "reports"
+  location: "asia-northeast1"
+  # ADC (Application Default Credentials) 使用。サービスアカウントキー未使用
+  service_account_key: ""
+
+ga4:
+  property_id: "386840839"
+  # GA4 BigQueryエクスポートデータセット
+  raw_dataset: "analytics_386840839"
+
+kpi_targets:
+  monthly_sessions: 5000
+  monthly_inquiries: 9
+  monthly_downloads: 30
+  monthly_appointments: 6
+  monthly_contracts: 3  # KGI
+
+report:
+  openai_model: "gpt-4o"
+  temperature: 0.3
+  max_tokens_executive: 800
+  max_tokens_ops: 1500
+  # 配信先（環境変数から取得）
+  client_email: ""  # 環境変数 ARK_CLIENT_EMAIL
+  cc_emails: []
+  drive_folder_id: ""  # 環境変数 ARK_DRIVE_FOLDER_ID
+  lark_webhook: ""    # 環境変数 LARK_WEBHOOK_URL
+
+schedule:
+  daily_bq_refresh: "0 4 * * *"      # 毎日 AM 4:00
+  monthly_report: "0 9 1 * *"         # 毎月1日 AM 9:00
+  weekly_report: "0 9 * * 1"          # 毎週月曜 AM 9:00

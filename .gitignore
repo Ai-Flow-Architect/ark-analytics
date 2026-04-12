@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# venv
+venv/
+.venv/
+
+# ログ
+logs/
+
+# 認証情報
+*.json
+!package.json
+
+# 環境変数
+.env
