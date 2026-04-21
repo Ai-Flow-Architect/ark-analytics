@@ -16,3 +16,6 @@ logs/
 
 # 環境変数
 .env
+
+# Streamlit secrets（APIキー等を含むため必ず除外）
+.streamlit/secrets.toml
