@@ -28,7 +28,7 @@ report:
   max_tokens_executive: 800
   max_tokens_ops: 1500
   # 配信先（環境変数から取得）
-  client_email: "aspr.k.kamimura@gmail.com"  # トゥールル様 管理アドレス（2026-04-14受領）
+  client_email: "aspr.k.kamimura@gmail.com"  # 株式会社アテンド 担当者様 管理アドレス（2026-04-14受領）
   cc_emails: []
   drive_folder_id: ""  # 環境変数 ARK_DRIVE_FOLDER_ID
   lark_webhook: ""    # 環境変数 LARK_WEBHOOK_URL
