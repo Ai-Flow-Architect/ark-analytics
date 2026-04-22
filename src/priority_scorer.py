@@ -73,9 +73,9 @@ class PriorityScorer:
         else:
             self.bq = bigquery.Client(project=self.project_id)
 
-        api_key = os.environ.get("OPENAI_API_KEY", "")
+        api_key = os.environ.get("ARK_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
-            raise EnvironmentError("OPENAI_API_KEY が環境変数に設定されていません")
+            raise EnvironmentError("ARK_OPENAI_API_KEY または OPENAI_API_KEY が環境変数に設定されていません")
         self.openai = OpenAI(api_key=api_key)
         self.model = self.config["report"].get("openai_model", "gpt-4o")
 

@@ -27,9 +27,10 @@ class AIAnalyzer:
 
     def __init__(self, config: dict | None = None) -> None:
         self.config = config or _load_config()
-        api_key = os.environ.get("OPENAI_API_KEY", "")
+        # ARK_OPENAI_API_KEY を優先（クライアント専用キー）、なければ OPENAI_API_KEY にフォールバック
+        api_key = os.environ.get("ARK_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
-            raise EnvironmentError("OPENAI_API_KEY が環境変数に設定されていません")
+            raise EnvironmentError("ARK_OPENAI_API_KEY または OPENAI_API_KEY が環境変数に設定されていません")
         self.client = OpenAI(api_key=api_key)
         self.model = self.config["report"].get("openai_model", "gpt-4o")
         self.temperature = float(self.config["report"].get("temperature", 0.3))
