@@ -77,8 +77,12 @@ if "pending_question" not in st.session_state:
 @st.cache_resource(show_spinner=False)
 def _init_clients():
     config_path = os.path.join(os.path.dirname(__file__), "config", "settings.yaml")
-    with open(config_path, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+    except FileNotFoundError:
+        st.error(f"❌ 設定ファイルが見つかりません: {config_path}")
+        st.stop()
 
     project_id = cfg["gcp"]["project_id"]
 
@@ -122,7 +126,8 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
 
     def _q(sql: str, label: str) -> None:
         try:
-            df = bq.query(sql).to_dataframe()
+            job = bq.query(sql)
+            df = job.result(timeout=30).to_dataframe()
             if not df.empty:
                 results[label] = df
         except Exception as e:
@@ -201,7 +206,10 @@ def _ask_ai(
         messages=messages,
         max_tokens=700,
         temperature=0.3,
+        timeout=30,
     )
+    if not resp.choices:
+        return "（AI応答が得られませんでした）"
     return resp.choices[0].message.content or ""
 
 
@@ -258,6 +266,9 @@ if question:
     with st.chat_message("user"):
         st.markdown(question)
 
+    answer: str = ""
+    data_frames: dict[str, pd.DataFrame] = {}
+
     with st.chat_message("assistant"):
         with st.spinner("BigQueryからデータを取得中..."):
             try:
@@ -287,11 +298,11 @@ if question:
                 st.markdown(f'<div class="data-label">{label}</div>', unsafe_allow_html=True)
                 st.dataframe(df, use_container_width=True, hide_index=True)
 
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": answer,
-        "data_frames": {k: v.to_dict() for k, v in data_frames.items()},
-    })
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer,
+            "data_frames": {k: v.to_dict() for k, v in data_frames.items()},
+        })
 
 # ── フッター ────────────────────────────────────────────────────
 st.markdown("---")
