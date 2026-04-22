@@ -1,6 +1,6 @@
 # ark-analytics 納品・権限移譲チェックリスト
 
-納品担当: 五十嵐 | 対象: トゥールル様（example.invalid）| 目標納品日: 2026年4月23〜24日
+納品担当: 五十嵐 | 対象: BtoB事業会社A社 様（example.invalid）| 目標納品日: 2026年4月23〜24日
 
 ---
 
@@ -17,7 +17,7 @@
 
 ---
 
-## 権限移譲チェックリスト（トゥールル様側での操作）
+## 権限移譲チェックリスト（BtoB事業会社A社 様側での操作）
 
 ### A. BigQuery権限確認
 
@@ -34,9 +34,9 @@
 
 ダッシュボードURL: https://datastudio.google.com/reporting/e26ea2fe-edd9-47d6-8187-dd7c7cd31b8e
 
-- [x] トゥールル様（REDACTED-CLIENT-EMAIL@example.invalid）に「閲覧者」権限を付与済みか確認（4/22完了）
-- [ ] 上記URLをトゥールル様に送付（4/24 納品時）
-- [ ] トゥールル様側でPage1〜5が表示されることを確認（4/24 納品時）
+- [x] BtoB事業会社A社 担当者様（REDACTED-CLIENT-EMAIL@example.invalid）に「閲覧者」権限を付与済みか確認（4/22完了）
+- [ ] 上記URLをBtoB事業会社A社 担当者様に送付（4/24 納品時）
+- [ ] BtoB事業会社A社 担当者様側でPage1〜5が表示されることを確認（4/24 納品時）
 
 ### C. GTMタグ設置
 
@@ -108,6 +108,6 @@ bash scripts/daily_refresh.sh
 
 ## 納品後のサポート範囲
 
-- 納品後 **7日間** は確認・修正対応を実施
+- 納品後 **約2週間** は確認・修正対応を実施
 - バグ・動作不良: Coconalaトークルームにてご連絡ください
 - Looker Studio設定・GTM設置のサポートも対応可能
