@@ -161,8 +161,8 @@ class GA4DataCollector:
           ROUND(AVG(step3_contact_page), 0)   AS avg_contact_page,
           ROUND(AVG(step4_form_start), 0)     AS avg_form_start,
           ROUND(AVG(step5_submission), 0)     AS avg_submission,
-          ROUND(AVG(step1_to_2_rate)*100, 2)  AS step1_to_2_pct,
-          ROUND(AVG(step2_to_3_rate)*100, 2)  AS step2_to_3_pct,
+          ROUND(AVG(step1_to_2b_rate)*100, 2)  AS step1_to_2_pct,
+          ROUND(AVG(step2b_to_3_rate)*100, 2)  AS step2_to_3_pct,
           ROUND(AVG(step3_to_4_rate)*100, 2)  AS step3_to_4_pct,
           ROUND(AVG(step4_to_5_rate)*100, 2)  AS step4_to_5_pct,
           ROUND(AVG(overall_inquiry_cvr)*100, 2) AS overall_inquiry_cvr_pct

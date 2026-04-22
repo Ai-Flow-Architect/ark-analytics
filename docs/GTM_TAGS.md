@@ -73,8 +73,44 @@ ORDER BY 2, cnt DESC
 
 ## ② CTAクリックトラッキング
 
+### CTAパラメータ命名ルール（2026-04-16 追加）
+
+後からの分析・比較を容易にするため、以下の命名ルールを統一して使用する。
+
+| パラメータ名 | 意味 | 値の例 |
+|------------|------|--------|
+| `cta_location` | ページ上の位置 | `hero` / `mid_page` / `footer` / `sidebar` |
+| `cta_type` | CTAの種別 | `button` / `text_link` / `banner` / `nav` |
+| `cta_purpose` | CTAの目的 | `contact` / `download` / `consult` / `inquiry` |
+| `cta_id` | CTA識別名（一意） | `hero-contact-btn` / `footer-download-link` |
+| `cta_text` | ボタンのテキスト（50文字以内） | `お問い合わせはこちら` |
+| `page_path` | ページパス | `/` / `/contact/` |
+
+**位置の判定基準（自動検出）**
+
+| 位置 | 判定ロジック |
+|------|------------|
+| `hero` | ページ上部 33% 以内（または `data-cta-location="hero"` 属性） |
+| `mid_page` | ページ中間 33〜66%（または `data-cta-location="mid_page"` 属性） |
+| `footer` | ページ下部 66% 以降（または `data-cta-location="footer"` 属性） |
+| `sidebar` | `data-cta-location="sidebar"` 属性が付いている場合 |
+
+**種別の判定基準（自動検出）**
+
+| 種別 | 判定ロジック |
+|------|------------|
+| `button` | `<button>` 要素、または `.btn-*` / `.cta-*` クラス（または `data-cta-type="button"` 属性） |
+| `text_link` | `<a>` 要素でボタンクラスなし |
+| `banner` | `data-cta-type="banner"` 属性が付いている場合 |
+| `nav` | `<nav>` 内の要素（または `data-cta-type="nav"` 属性） |
+
+> **HTML属性で上書き可能**: `data-cta-location` / `data-cta-type` 属性を要素に付ければ自動検出より優先されます。
+> 例: `<a href="/contact/" data-cta data-cta-location="hero" data-cta-type="button">お問い合わせ</a>`
+
+---
+
 ### 対象要素
-`.cta-button`、`a[href*="contact"]`、`.btn-contact` などのCTAボタン
+`.cta-button`、`a[href*="contact"]`、`.btn-contact`、`[data-cta]` などのCTAボタン
 
 ### タグ種別
 カスタムHTML
@@ -84,7 +120,6 @@ ORDER BY 2, cnt DESC
 ```html
 <script>
 (function() {
-  // CTAとして計測するセレクタ一覧（必要に応じて追加）
   var ctaSelectors = [
     '.cta-button',
     '.btn-contact',
@@ -93,16 +128,61 @@ ORDER BY 2, cnt DESC
     '[data-cta]'
   ];
 
+  // cta_location を判定（data属性優先 → スクロール位置で自動判定）
+  function getCtaLocation(el) {
+    if (el.dataset.ctaLocation) return el.dataset.ctaLocation;
+    var rect = el.getBoundingClientRect();
+    var absTop = rect.top + window.pageYOffset;
+    var docHeight = document.documentElement.scrollHeight;
+    var pct = docHeight > 0 ? absTop / docHeight : 0;
+    if (pct < 0.33) return 'hero';
+    if (pct < 0.66) return 'mid_page';
+    return 'footer';
+  }
+
+  // cta_type を判定（data属性優先 → 要素・クラスで自動判定）
+  function getCtaType(el) {
+    if (el.dataset.ctaType) return el.dataset.ctaType;
+    if (el.closest('nav')) return 'nav';
+    if (el.tagName === 'BUTTON' ||
+        el.className.match(/btn|cta/i)) return 'button';
+    if (el.tagName === 'A') return 'text_link';
+    return 'button';
+  }
+
+  // cta_purpose を判定（data属性優先 → href/クラスで自動推定）
+  function getCtaPurpose(el) {
+    if (el.dataset.ctaPurpose) return el.dataset.ctaPurpose;
+    var href = el.href || '';
+    var text = el.innerText || '';
+    if (/contact|問い合わせ|相談/.test(href + text)) return 'contact';
+    if (/download|dl|資料/.test(href + text)) return 'download';
+    if (/consult|コンサル|無料相談/.test(href + text)) return 'consult';
+    if (/inquiry|お問い合わせ/.test(href + text)) return 'inquiry';
+    return 'contact';
+  }
+
+  // cta_id を取得（data属性優先 → location+type で自動生成）
+  function getCtaId(el, location, type) {
+    if (el.dataset.ctaId) return el.dataset.ctaId;
+    if (el.id) return el.id;
+    return location + '-' + type;
+  }
+
   document.addEventListener('click', function(e) {
     var target = e.target;
-    // クリックした要素または親要素がCTAに一致するか確認
     for (var i = 0; i < ctaSelectors.length; i++) {
       var el = target.closest(ctaSelectors[i]);
       if (el) {
+        var loc  = getCtaLocation(el);
+        var type = getCtaType(el);
         gtag('event', 'cta_click', {
-          'cta_text': el.innerText.trim().substring(0, 50),
-          'cta_url': el.href || '',
-          'page_path': window.location.pathname
+          'cta_location': loc,
+          'cta_type':     type,
+          'cta_purpose':  getCtaPurpose(el),
+          'cta_id':       getCtaId(el, loc, type),
+          'cta_text':     el.innerText.trim().substring(0, 50),
+          'page_path':    window.location.pathname
         });
         break;
       }
@@ -118,13 +198,17 @@ ORDER BY 2, cnt DESC
 ### BQでの確認クエリ
 ```sql
 SELECT
-  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_text') AS cta_text,
-  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_path') AS page_path,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_location') AS cta_location,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_type')     AS cta_type,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_purpose')  AS cta_purpose,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_id')       AS cta_id,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_text')     AS cta_text,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_path')    AS page_path,
   COUNT(*) AS clicks
 FROM `ark-hd-analytics.analytics_386840839.events_*`
 WHERE event_name = 'cta_click'
   AND _TABLE_SUFFIX >= FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY))
-GROUP BY 1,2
+GROUP BY 1,2,3,4
 ORDER BY clicks DESC
 LIMIT 20
 ```

@@ -29,16 +29,22 @@ SELECT
   k.overall_cvr,
 
   -- ── ファネル ──────────────────────────────────────────
-  f.step1_sessions        AS funnel_step1_sessions,
-  f.step2_service_view    AS funnel_step2_service_view,
-  f.step3_contact_page    AS funnel_step3_contact_page,
-  f.step4_form_start      AS funnel_step4_form_start,
-  f.step5_submission      AS funnel_step5_submission,
-  f.step1_to_2_rate       AS funnel_rate_1to2,
-  f.step2_to_3_rate       AS funnel_rate_2to3,
-  f.step3_to_4_rate       AS funnel_rate_3to4,
-  f.step4_to_5_rate       AS funnel_rate_4to5,
-  f.overall_inquiry_cvr   AS funnel_overall_cvr
+  f.step1_sessions          AS funnel_step1_sessions,
+  -- 中間行動: 記事内CTAクリック（GTMタグ②設置後から計測）
+  f.step2a_cta_click        AS funnel_cta_click_sessions,
+  f.step2a_cta_click_total  AS funnel_cta_click_total,
+  f.step1_to_cta_rate       AS funnel_cta_click_rate,
+  f.cta_to_contact_rate     AS funnel_cta_to_contact_rate,
+  -- サービスページ経由ルート
+  f.step2b_service_view     AS funnel_step2_service_view,
+  f.step3_contact_page      AS funnel_step3_contact_page,
+  f.step4_form_start        AS funnel_step4_form_start,
+  f.step5_submission        AS funnel_step5_submission,
+  f.step1_to_2b_rate        AS funnel_rate_1to2,
+  f.step2b_to_3_rate        AS funnel_rate_2to3,
+  f.step3_to_4_rate         AS funnel_rate_3to4,
+  f.step4_to_5_rate         AS funnel_rate_4to5,
+  f.overall_inquiry_cvr     AS funnel_overall_cvr
 
 FROM `ark-hd-analytics.marts.daily_kpi_summary` k
 LEFT JOIN `ark-hd-analytics.marts.conversion_funnel_daily` f
