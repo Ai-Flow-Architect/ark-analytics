@@ -6,14 +6,15 @@
 
 ## システム概要
 
-| サービス | 内容 | 状態 |
-|---------|------|------|
-| ① BigQuery分析基盤 | GA4データをBQへ自動転送・集計 | ✅ 構築済み |
-| ② 月次レポート自動生成 | 毎月1日9:00にHTMLメール+Drive保存 | ✅ cron設定済み |
-| ③ 自然言語QA | 「どのページが…？」に即回答 | ✅ 実装済み |
-| ④ 改善施策スコアリング | 優先度TOP5を自動算出 | ✅ 実装済み |
-| ⑤ Looker Studioダッシュボード | BQ接続のリアルタイム可視化 | 📋 手順書あり・設置は操作必要 |
-| ⑥ GTMカスタムイベント | スクロール・CTA・フォーム計測 | 📋 コードあり・GTMへの設置必要 |
+| サービス | 内容 | 状態 | URL / 備考 |
+|---------|------|------|-----------|
+| ① BigQuery分析基盤 | GA4データをBQへ自動転送・集計 | ✅ 構築済み | GCP: ark-hd-analytics |
+| ② 月次レポート自動生成 | 毎月1日9:00にHTMLメール+Drive保存 | ✅ cron設定済み | 配信先: aspr.k.kamimura@gmail.com |
+| ③ 自然言語QA（Streamlit） | 「どのページが…？」に即回答 | ✅ 本番稼働中 | https://ark-analytics.streamlit.app/ |
+| ④ 改善施策スコアリング | 優先度TOP5を自動算出 | ✅ 実装済み | QAアプリに統合 |
+| ⑤ Looker Studioダッシュボード | BQ接続のリアルタイム可視化 | ⏳ Page3〜5グラフ設定中（4/23） | https://datastudio.google.com/reporting/e26ea2fe-edd9-47d6-8187-dd7c7cd31b8e |
+| ⑥ GTMカスタムイベント | スクロール・CTA・フォーム計測 | ✅ 設置・確認済み（4/23） | GTM-5B3L5372 / ark-hd.co.jp head確認済み |
+| ⑦ 仕様書（GitHub Pages） | 全システム仕様・運用マニュアル | ✅ 公開済み | https://ai-flow-architect.github.io/ark-analytics-spec/ |
 
 ---
 
@@ -42,9 +43,8 @@
 
 詳細コード: [GTM_TAGS.md](GTM_TAGS.md)
 
-- [ ] GTMコンテナ GTM-5B3L5372 にログイン
-- [ ] タグ①〜③を「カスタムHTML」で作成・設定
-- [ ] プレビューモードで動作確認 → 公開
+- [x] GTMコンテナ GTM-5B3L5372 にタグ①〜③設定・v2公開済み（4/21完了）
+- [x] ark-hd.co.jp `<head>` + `<noscript>` にGTMスニペット設置確認済み（4/23 curl確認）
 
 ### D. 月次レポート配信確認
 
