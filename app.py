@@ -71,7 +71,16 @@ COLUMN_JA = {
 
 def _ja(df: pd.DataFrame) -> pd.DataFrame:
     """DataFrameの列名を日本語に変換"""
-    return df.rename(columns={k: v for k, v in COLUMN_JA.items() if k in df.columns})
+    return df.rename(columns=COLUMN_JA)
+
+
+def _col_config(df: pd.DataFrame) -> dict:
+    """st.dataframe用 column_config（表示名を日本語化）"""
+    return {
+        k: st.column_config.Column(label=v)
+        for k, v in COLUMN_JA.items()
+        if k in df.columns
+    }
 
 
 st.markdown(f"""
@@ -211,55 +220,62 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
 
 def _render_data(label: str, df: pd.DataFrame) -> None:
     """データをグラフ＋テーブルで表示"""
-    df_ja = _ja(df.copy())
-
     st.markdown(f'<div class="section-label">{label}</div>', unsafe_allow_html=True)
+    col_cfg = _col_config(df)
 
     if label == "日次KPI（直近14日）":
-        df_sorted = df_ja.sort_values("日付") if "日付" in df_ja.columns else df_ja
+        df_sorted = df.sort_values("report_date") if "report_date" in df.columns else df
         col1, col2 = st.columns(2)
         with col1:
-            if "セッション数" in df_sorted.columns and "日付" in df_sorted.columns:
+            if "sessions" in df_sorted.columns and "report_date" in df_sorted.columns:
                 st.markdown('<p class="chart-title">セッション数推移</p>', unsafe_allow_html=True)
-                chart_df = df_sorted.set_index("日付")[["セッション数"]]
-                st.line_chart(chart_df, height=200, use_container_width=True)
+                _c = df_sorted.set_index("report_date")[["sessions"]].rename(columns={"sessions": "セッション数"})
+                st.line_chart(_c, height=200, use_container_width=True)
         with col2:
-            if "コンバージョン率(%)" in df_sorted.columns and "日付" in df_sorted.columns:
+            if "overall_cvr_pct" in df_sorted.columns and "report_date" in df_sorted.columns:
                 st.markdown('<p class="chart-title">コンバージョン率(%)推移</p>', unsafe_allow_html=True)
-                chart_df = df_sorted.set_index("日付")[["コンバージョン率(%)"]]
-                st.line_chart(chart_df, height=200, use_container_width=True)
-        st.dataframe(df_sorted, use_container_width=True, hide_index=True)
+                _c = df_sorted.set_index("report_date")[["overall_cvr_pct"]].rename(columns={"overall_cvr_pct": "CVR(%)"})
+                st.line_chart(_c, height=200, use_container_width=True)
+        st.dataframe(df_sorted, column_config=col_cfg, use_container_width=True, hide_index=True)
 
     elif label == "ページ別パフォーマンス":
-        if "ページビュー数" in df_ja.columns and "ページパス" in df_ja.columns:
+        if "pageviews" in df.columns and "page_path" in df.columns:
             st.markdown('<p class="chart-title">ページビュー数 TOP15</p>', unsafe_allow_html=True)
-            chart_df = df_ja.set_index("ページパス")[["ページビュー数"]].head(10)
+            chart_df = df.set_index("page_path")[["pageviews"]].head(10)
+            chart_df.index.name = "ページパス"
+            chart_df.columns = ["ページビュー数"]
             st.bar_chart(chart_df, height=220, use_container_width=True)
-        st.dataframe(df_ja, use_container_width=True, hide_index=True)
+        st.dataframe(df, column_config=col_cfg, use_container_width=True, hide_index=True)
 
     elif label == "チャネル別月次KPI":
-        if "チャネル" in df_ja.columns and "セッション数" in df_ja.columns:
-            latest_month = df_ja["月"].max() if "月" in df_ja.columns else None
-            df_latest = df_ja[df_ja["月"] == latest_month] if latest_month else df_ja
+        if "channel_grouping" in df.columns and "sessions" in df.columns and "report_month" in df.columns:
+            latest_month = df["report_month"].max()
+            df_latest = df[df["report_month"] == latest_month]
             st.markdown('<p class="chart-title">チャネル別セッション数（最新月）</p>', unsafe_allow_html=True)
-            chart_df = df_latest.set_index("チャネル")[["セッション数"]]
+            chart_df = df_latest.set_index("channel_grouping")[["sessions"]]
+            chart_df.index.name = "チャネル"
+            chart_df.columns = ["セッション数"]
             st.bar_chart(chart_df, height=200, use_container_width=True)
-        st.dataframe(df_ja, use_container_width=True, hide_index=True)
+        st.dataframe(df, column_config=col_cfg, use_container_width=True, hide_index=True)
 
     elif label == "ファネル（直近14日）":
-        funnel_cols = ["Step1: セッション開始", "Step2: サービスページ閲覧",
-                       "Step3: お問い合わせページ", "Step4: フォーム入力開始", "Step5: フォーム送信完了"]
-        avail = [c for c in funnel_cols if c in df_ja.columns]
-        if avail:
+        funnel_raw = ["step1_sessions", "step2_service_view", "step3_contact_page",
+                      "step4_form_start", "step5_submission"]
+        funnel_ja  = ["Step1: セッション開始", "Step2: サービスページ閲覧",
+                      "Step3: お問い合わせページ", "Step4: フォーム入力開始", "Step5: フォーム送信完了"]
+        avail_raw = [c for c in funnel_raw if c in df.columns]
+        if avail_raw:
             st.markdown('<p class="chart-title">ファネル平均（直近14日）</p>', unsafe_allow_html=True)
-            funnel_avg = df_ja[avail].mean().round(1)
+            funnel_avg = df[avail_raw].mean().round(1)
+            label_map = dict(zip(funnel_raw, funnel_ja))
+            funnel_avg.index = [label_map.get(c, c) for c in funnel_avg.index]
             funnel_avg_df = funnel_avg.reset_index()
             funnel_avg_df.columns = ["ステップ", "平均件数"]
             st.bar_chart(funnel_avg_df.set_index("ステップ"), height=200, use_container_width=True)
-        st.dataframe(df_ja, use_container_width=True, hide_index=True)
+        st.dataframe(df, column_config=col_cfg, use_container_width=True, hide_index=True)
 
     else:
-        st.dataframe(df_ja, use_container_width=True, hide_index=True)
+        st.dataframe(df, column_config=col_cfg, use_container_width=True, hide_index=True)
 
 
 # ── AI 回答（会話履歴対応） ─────────────────────────────────────
@@ -392,7 +408,7 @@ if question:
 st.markdown("---")
 st.markdown(
     "<p style='text-align:center;font-size:12px;color:#94a3b8;'>"
-    "ARK Analytics | GA4 × BigQuery × AI 分析基盤 | Powered by GPT-4o | v2.0"
+    "ARK Analytics | GA4 × BigQuery × AI 分析基盤 | Powered by GPT-4o | v2.2"
     "</p>",
     unsafe_allow_html=True,
 )
