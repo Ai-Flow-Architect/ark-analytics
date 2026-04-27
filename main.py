@@ -181,9 +181,7 @@ def run_weekly_report(frequency: str = "weekly") -> None:
         to_email=None,  # ARK_CLIENT_EMAIL 環境変数から取得
     )
 
-    # Lark通知
-    delivery.notify_lark(month, kpi)
-    print("✅ 週次レポート完了（メール + Lark）")
+    print("✅ 週次レポート完了（メール配信）")
 
 
 def run_qa(question: str) -> None:
