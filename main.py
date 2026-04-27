@@ -105,13 +105,27 @@ def run_monthly_report(month: str, dry_run: bool = False) -> None:
     print(f"\n✅ {month} 月次レポート完了")
 
 
-def run_weekly_report() -> None:
-    """週次ミニレポート（Lark通知のみ）"""
+def run_weekly_report(frequency: str = "weekly") -> None:
+    """週次/隔週ミニレポート（Lark通知 + メール配信）
+
+    Args:
+        frequency: "weekly"（毎週）または "biweekly"（隔週）
+    """
     from src.data_collector import GA4DataCollector
     from src.delivery import ReportDelivery
+    from src.report_formatter import ReportFormatter
 
     today = date.today()
+
+    # 隔週の場合は奇数週のみ実行
+    if frequency == "biweekly":
+        week_number = today.isocalendar()[1]
+        if week_number % 2 != 1:
+            print(f"⏭  隔週設定のため今週はスキップ（第{week_number}週 = 偶数週）")
+            return
+
     month = f"{today.year:04d}-{today.month:02d}"
+    week_label = f"{today.month}/{today.day}週"
 
     print(f"\n=== ark-analytics 週次ミニレポート ({today}) ===\n")
     collector = GA4DataCollector()
@@ -121,9 +135,55 @@ def run_weekly_report() -> None:
         print("❌ データが取得できませんでした")
         return
 
+    sessions = int(kpi.get("sessions", 0))
+    inquiries = int(kpi.get("inquiries", 0))
+    downloads = int(kpi.get("downloads", 0))
+    cvr = round(float(kpi.get("contact_cr", 0)) * 100, 2)
+
+    # メール配信（KPIサマリー形式）
     delivery = ReportDelivery()
+    html_body = f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+<h2 style="color:#1e293b;border-bottom:2px solid #4a6cf7;padding-bottom:8px;">
+  週次KPIレポート｜{week_label}（{month}月累積）
+</h2>
+<table style="width:100%;border-collapse:collapse;margin:16px 0;">
+  <tr style="background:#f8faff;">
+    <td style="padding:10px 14px;border:1px solid #e2e8f0;font-weight:700;">セッション数</td>
+    <td style="padding:10px 14px;border:1px solid #e2e8f0;">{sessions:,}件
+      <span style="color:#64748b;font-size:12px;">（目標 5,000件 / 達成率 {sessions/5000*100:.1f}%）</span></td>
+  </tr>
+  <tr>
+    <td style="padding:10px 14px;border:1px solid #e2e8f0;font-weight:700;">問合せ数</td>
+    <td style="padding:10px 14px;border:1px solid #e2e8f0;">{inquiries}件
+      <span style="color:#64748b;font-size:12px;">（目標 9件 / 達成率 {inquiries/9*100:.1f}%）</span></td>
+  </tr>
+  <tr style="background:#f8faff;">
+    <td style="padding:10px 14px;border:1px solid #e2e8f0;font-weight:700;">資料DL数</td>
+    <td style="padding:10px 14px;border:1px solid #e2e8f0;">{downloads}件</td>
+  </tr>
+  <tr>
+    <td style="padding:10px 14px;border:1px solid #e2e8f0;font-weight:700;">CVR</td>
+    <td style="padding:10px 14px;border:1px solid #e2e8f0;">{cvr}%</td>
+  </tr>
+</table>
+<p style="color:#64748b;font-size:13px;">
+  ※ 月末時点の月次AIレポートで詳細分析・改善施策をお届けします。<br>
+  ※ Looker Studioダッシュボードでリアルタイム確認できます：
+  <a href="https://datastudio.google.com/reporting/e26ea2fe-edd9-47d6-8187-dd7c7cd31b8e">ダッシュボードを開く</a>
+</p>
+<p style="font-size:12px;color:#94a3b8;">このメールは ark-analytics 自動配信システムにより送信されています。</p>
+</body></html>
+"""
+    delivery.send_gmail(
+        month,
+        html_body,
+        to_email=None,  # ARK_CLIENT_EMAIL 環境変数から取得
+    )
+
+    # Lark通知
     delivery.notify_lark(month, kpi)
-    print("✅ 週次Lark通知完了")
+    print("✅ 週次レポート完了（メール + Lark）")
 
 
 def run_qa(question: str) -> None:
@@ -170,13 +230,19 @@ def main() -> None:
         default="",
         help="QAモード用の質問文 (例: 'どのページが一番離脱が多いですか？')",
     )
+    parser.add_argument(
+        "--frequency",
+        choices=["weekly", "biweekly"],
+        default="weekly",
+        help="週次レポートの配信頻度 (weekly=毎週 / biweekly=隔週)",
+    )
     args = parser.parse_args()
 
     if args.report_type == "monthly":
         month = get_target_month(args.month)
         run_monthly_report(month, dry_run=args.dry_run)
     elif args.report_type == "weekly":
-        run_weekly_report()
+        run_weekly_report(frequency=args.frequency)
     elif args.report_type == "qa":
         run_qa(args.question)
     elif args.report_type == "scorer":
