@@ -1,0 +1,39 @@
+name: Keepalive
+
+# 60日間リポジトリ活動がないとscheduledワークフローが自動無効化されるGitHubの仕様への対策
+# 月初1回 README に最終更新タイムスタンプを書き込んでcommitすることで活動を維持する
+
+on:
+  schedule:
+    # 毎月1日 AM 8:30 JST（weekly/monthlyレポートより前に走らせる）
+    - cron: '30 23 28 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update keepalive timestamp
+        run: |
+          mkdir -p .github
+          date '+keepalive: %Y-%m-%dT%H:%M:%S%z' > .github/keepalive.txt
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain .github/keepalive.txt)" ]; then
+            git add .github/keepalive.txt
+            git commit -m "chore: keepalive bump $(date '+%Y-%m-%d')"
+            git push
+          else
+            echo "No changes to commit (keepalive timestamp unchanged)"
+          fi
