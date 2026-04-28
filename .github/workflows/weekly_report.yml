@@ -1,0 +1,55 @@
+name: Weekly Report
+
+on:
+  schedule:
+    # 毎週月曜 AM 9:00 JST = 毎週月曜 0:00 UTC
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+    inputs:
+      frequency:
+        description: 'weekly or biweekly'
+        required: false
+        default: 'weekly'
+
+jobs:
+  send-weekly-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Write GCP Service Account key
+        run: |
+          echo "$GCP_SERVICE_ACCOUNT_KEY" > /tmp/gcp-sa.json
+          chmod 600 /tmp/gcp-sa.json
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run weekly report
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-sa.json
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ARK_OPENAI_API_KEY: ${{ secrets.ARK_OPENAI_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ARK_CLIENT_EMAIL: ${{ secrets.ARK_CLIENT_EMAIL }}
+          TZ: Asia/Tokyo
+        run: |
+          python main.py --report-type weekly --frequency ${{ github.event.inputs.frequency || 'weekly' }}
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/gcp-sa.json
