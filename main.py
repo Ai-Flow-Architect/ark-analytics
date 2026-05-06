@@ -37,6 +37,37 @@ def get_target_month(args_month: str | None) -> str:
     return f"{year:04d}-{month:02d}"
 
 
+def _run_freshness_check(threshold_days: int, source: str, dry_run: bool) -> None:
+    """データ鮮度プリチェック。閾値超過なら Lark通知 + sys.exit(1)。
+
+    dry_run時はチェック結果に関わらず警告ログのみで継続する（テスト/プレビュー目的）。
+    """
+    import subprocess
+
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "scripts", "check_data_freshness.py")
+    if not os.path.exists(script):
+        # スクリプト未配置の旧環境互換
+        return
+
+    result = subprocess.run(
+        [sys.executable, script,
+         "--threshold-days", str(threshold_days),
+         "--source", source],
+        capture_output=True, text=True
+    )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+
+    if result.returncode != 0:
+        if dry_run:
+            print(f"⚠️ [dry_run] 鮮度チェック失敗だが継続: source={source}")
+            return
+        sys.exit(result.returncode)
+
+
 def run_monthly_report(month: str, dry_run: bool = False) -> None:
     """月次レポートを生成して配信する"""
     print(f"\n=== ark-analytics 月次レポート: {month} ===\n")
@@ -47,6 +78,9 @@ def run_monthly_report(month: str, dry_run: bool = False) -> None:
     from src.ai_analyzer import AIAnalyzer
     from src.report_formatter import ReportFormatter
     from src.delivery import ReportDelivery
+
+    # 0. データ鮮度プリチェック（threshold 3日: monthlyは月初実行で許容幅広め）
+    _run_freshness_check(threshold_days=3, source="pre_monthly_report", dry_run=dry_run)
 
     # 1. データ収集
     print("1/5 BigQueryからデータ取得中...")
@@ -135,6 +169,10 @@ def run_weekly_report(frequency: str = "weekly") -> None:
     week_label = f"{today.month}/{today.day}週"
 
     print(f"\n=== ark-analytics 週次ミニレポート ({today}) ===\n")
+
+    # 0. データ鮮度プリチェック（threshold 2日）
+    _run_freshness_check(threshold_days=2, source="pre_weekly_report", dry_run=False)
+
     collector = GA4DataCollector()
     kpi = collector.get_monthly_kpi(month)
 
