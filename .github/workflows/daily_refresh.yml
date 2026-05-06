@@ -1,0 +1,46 @@
+name: Daily BQ Refresh
+
+# 受注案件のクラウド完結ルール準拠（CLAUDE.md）：
+# 旧来 五十嵐様ローカルcron で動いていた scripts/daily_refresh.sh を完全クラウド化。
+# 2026-05-04 の週次レポート不達インシデント（marts.daily_kpi_summary が4/14で停止）を契機に新設。
+
+on:
+  schedule:
+    # 毎日 19:00 UTC = 翌日 JST AM 4:00（旧cron `0 4 * * *` 相当）
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up gcloud / bq
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ark-hd-analytics
+
+      - name: Run daily refresh
+        env:
+          PROJECT_ID: ark-hd-analytics
+          LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
+        run: |
+          chmod +x ./scripts/daily_refresh.sh
+          ./scripts/daily_refresh.sh
+
+      - name: Upload log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-log
+          path: logs/refresh_*.log
+          retention-days: 14
