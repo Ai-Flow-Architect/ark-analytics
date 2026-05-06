@@ -1,15 +1,43 @@
 """
 alert.py
-失敗時のLark通知（自動配信が空振りしたケースを五十嵐様が即時検知できるようにする）
+Lark Bot 経由でジョブ失敗を通知する（既存lark_notify_claudecode.pyと同方式）。
+
+呼び出し方:
+  - Pythonから: from src.alert import notify_failure; notify_failure(job, reason, context)
+  - シェルから: python3 src/alert.py <job> <reason> [key1=value1 key2=value2 ...]
+
+環境変数（GitHub Secrets / .bashrc）:
+  LARK_APP_ID        必須
+  LARK_APP_SECRET    必須
+  LARK_CHAT_ID       省略時 ClaudeCode-Bot (oc_82797e277db9f5e20d3bfb18d0e0534f)
 """
 from __future__ import annotations
 
 import json
 import os
+import ssl
+import sys
+import urllib.request
 from datetime import datetime
 from typing import Any
 
-import requests
+DEFAULT_CHAT_ID = "oc_82797e277db9f5e20d3bfb18d0e0534f"  # ClaudeCode-Bot
+
+
+def _get_tenant_token(app_id: str, app_secret: str, ctx: ssl.SSLContext) -> str | None:
+    payload = json.dumps({"app_id": app_id, "app_secret": app_secret}).encode()
+    req = urllib.request.Request(
+        "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+            data = json.loads(r.read())
+        return data.get("tenant_access_token")
+    except Exception as e:
+        print(f"[alert] tenant_access_token 取得失敗: {e}")
+        return None
 
 
 def notify_failure(
@@ -17,21 +45,17 @@ def notify_failure(
     reason: str,
     context: dict[str, Any] | None = None,
 ) -> bool:
-    """
-    Lark Webhookでジョブ失敗を通知する。
+    app_id = os.environ.get("LARK_APP_ID", "")
+    app_secret = os.environ.get("LARK_APP_SECRET", "")
+    chat_id = os.environ.get("LARK_CHAT_ID", DEFAULT_CHAT_ID)
 
-    Args:
-        job: 失敗したジョブ名（例: "weekly_report" / "monthly_report" / "daily_refresh"）
-        reason: 失敗理由（例: "marts.daily_kpi_summary が空"）
-        context: 補足情報（target_month, frequency等）
+    if not app_id or not app_secret:
+        print(f"[alert] LARK_APP_ID/SECRET 未設定のため通知スキップ: {job} / {reason}")
+        return False
 
-    Returns:
-        通知成功時 True、Webhook URL未設定 or 失敗時 False
-    """
-    webhook_url = os.environ.get("LARK_WEBHOOK_URL", "")
-    if not webhook_url:
-        # 環境変数未設定時は標準出力にだけ出して False を返す（テスト/ローカル想定）
-        print(f"[alert] LARK_WEBHOOK_URL 未設定のため通知スキップ: {job} / {reason}")
+    ctx = ssl.create_default_context()
+    token = _get_tenant_token(app_id, app_secret, ctx)
+    if not token:
         return False
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -46,16 +70,50 @@ def notify_failure(
         f"reason: {reason}\n"
         f"time: {timestamp}{ctx_lines}\n"
         f"━━━━━━━━━━━━━━\n"
-        f"対応: GitHub Actions ログを確認してください"
+        f"GitHub Actions ログ: https://github.com/Ai-Flow-Architect/ark-analytics/actions"
     )
 
-    payload = {"msg_type": "text", "content": {"text": text}}
+    payload = json.dumps({
+        "receive_id": chat_id,
+        "msg_type": "text",
+        "content": json.dumps({"text": text}),
+    }).encode()
 
+    req = urllib.request.Request(
+        "https://open.larksuite.com/open-apis/im/v1/messages?receive_id_type=chat_id",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+    )
     try:
-        resp = requests.post(webhook_url, json=payload, timeout=10)
-        resp.raise_for_status()
-        print(f"[alert] Lark通知送信完了: {job}")
-        return True
-    except Exception as e:
-        print(f"[alert] Lark通知送信失敗: {e}")
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+            result = json.loads(r.read())
+        if result.get("code") == 0:
+            print(f"[alert] Lark通知送信完了: {job}")
+            return True
+        print(f"[alert] Lark送信失敗: {result.get('msg')}")
         return False
+    except Exception as e:
+        print(f"[alert] Lark送信例外: {e}")
+        return False
+
+
+def _cli() -> int:
+    if len(sys.argv) < 3:
+        print("Usage: python3 src/alert.py <job> <reason> [key=value ...]", file=sys.stderr)
+        return 2
+    job = sys.argv[1]
+    reason = sys.argv[2]
+    context: dict[str, Any] = {}
+    for arg in sys.argv[3:]:
+        if "=" in arg:
+            k, v = arg.split("=", 1)
+            context[k] = v
+    ok = notify_failure(job=job, reason=reason, context=context or None)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(_cli())

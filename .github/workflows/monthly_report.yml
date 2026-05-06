@@ -46,7 +46,9 @@ jobs:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ARK_CLIENT_EMAIL: ${{ secrets.ARK_CLIENT_EMAIL }}
-          LARK_WEBHOOK_URL: ${{ secrets.LARK_WEBHOOK_URL }}
+          LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
+          LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+          LARK_CHAT_ID: ${{ secrets.LARK_CHAT_ID }}
           TZ: Asia/Tokyo
         run: |
           MONTH_ARG="${{ github.event.inputs.month }}"

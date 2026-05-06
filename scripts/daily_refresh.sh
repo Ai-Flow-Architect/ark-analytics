@@ -25,11 +25,9 @@ echo "[$DATE] === ark-analytics 日次更新開始 (project=$PROJECT) ===" | tee
 
 notify_lark_failure() {
     local label=$1
-    if [ -n "${LARK_WEBHOOK_URL:-}" ]; then
-        local payload
-        payload=$(printf '{"msg_type":"text","content":{"text":"❌ ark-analytics daily_refresh FAILED\\nstep: %s\\nproject: %s\\ntime: %s"}}' "$label" "$PROJECT" "$DATE")
-        curl -s -X POST -H "Content-Type: application/json" -d "$payload" "$LARK_WEBHOOK_URL" >/dev/null || true
-    fi
+    # Bot API方式（src/alert.py）。LARK_APP_ID/SECRET未設定時は alert側でskip
+    python3 "$BASE_DIR/src/alert.py" "daily_refresh" "$label step失敗" \
+        "project=$PROJECT" "step=$label" "time=$DATE" 2>/dev/null || true
 }
 
 run_sql() {
@@ -54,4 +52,12 @@ run_sql "marts.conversion_funnel_daily"   "$SQL_DIR/marts/conversion_funnel_dail
 run_sql "marts.channel_kpi_monthly"       "$SQL_DIR/marts/channel_kpi_monthly.sql"
 run_sql "marts.page_performance"          "$SQL_DIR/marts/page_performance.sql"
 
-echo "[$DATE] === 日次更新完了 ===" | tee -a "$LOG"
+echo "[$DATE] === 日次更新完了 → 鮮度チェック ===" | tee -a "$LOG"
+
+# データ鮮度監視: MAX(report_date) が today-2 より古ければ alert.py で通知＋exit 1
+if python3 "$BASE_DIR/scripts/check_data_freshness.py" --threshold-days 2 --source post_refresh 2>&1 | tee -a "$LOG"; then
+    echo "[$DATE] === 鮮度チェックOK ===" | tee -a "$LOG"
+else
+    echo "[$DATE] === 鮮度チェック失敗（GA4→BQ Export 異常の可能性） ===" | tee -a "$LOG"
+    exit 1
+fi
