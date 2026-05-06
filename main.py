@@ -58,7 +58,14 @@ def run_monthly_report(month: str, dry_run: bool = False) -> None:
     top_pages_df = collector.get_top_pages(month)
 
     if not kpi:
-        print(f"❌ {month} のデータが取得できませんでした")
+        from src.alert import notify_failure
+        reason = f"{month} の marts.daily_kpi_summary に該当データがありません"
+        print(f"❌ {reason}")
+        notify_failure(
+            job="monthly_report",
+            reason=reason,
+            context={"month": month, "dry_run": dry_run},
+        )
         sys.exit(1)
 
     print(f"   セッション: {int(kpi.get('sessions', 0)):,} | 問合せ: {int(kpi.get('inquiries', 0))}件")
@@ -132,8 +139,15 @@ def run_weekly_report(frequency: str = "weekly") -> None:
     kpi = collector.get_monthly_kpi(month)
 
     if not kpi:
-        print("❌ データが取得できませんでした")
-        return
+        from src.alert import notify_failure
+        reason = f"{month} の marts.daily_kpi_summary に該当データがありません（daily_refresh が走っていない可能性あり）"
+        print(f"❌ {reason}")
+        notify_failure(
+            job="weekly_report",
+            reason=reason,
+            context={"month": month, "frequency": frequency, "today": str(today)},
+        )
+        sys.exit(1)
 
     sessions = int(kpi.get("sessions", 0))
     inquiries = int(kpi.get("inquiries", 0))
