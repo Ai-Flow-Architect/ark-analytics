@@ -35,8 +35,7 @@ def main() -> int:
     parser.add_argument("--threshold-days", type=int, default=2,
                         help="許容遅延日数（既定: 2日。今日-threshold より古いと異常）")
     parser.add_argument("--source", default="post_refresh",
-                        choices=["pre_report", "post_refresh"],
-                        help="呼び出し元を識別する文字列（通知の context に入る）")
+                        help="呼び出し元を識別する任意文字列（通知の context に入る）")
     args = parser.parse_args()
 
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "ark-hd-analytics")
