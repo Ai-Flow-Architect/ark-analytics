@@ -11,10 +11,7 @@ from openai import OpenAI
 from google.cloud import bigquery
 
 
-def _load_config() -> dict:
-    config_path = os.path.join(os.path.dirname(__file__), "..", "config", "settings.yaml")
-    with open(config_path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+from src._config_loader import load_config as _load_config
 
 
 # 質問の意図からどのBQテーブルを引くかを決定する関数群
