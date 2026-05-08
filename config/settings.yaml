@@ -28,9 +28,10 @@ report:
   max_tokens_executive: 800
   max_tokens_ops: 1500
   # 配信先（環境変数から取得）
-  client_email: "REDACTED-CLIENT-EMAIL@example.invalid"  # BtoB事業会社A社 担当者様 管理アドレス（2026-04-14受領）
-  cc_emails:
-    - "REDACTED-CC-EMAIL@example.invalid"  # 2026-05-07 トゥールル様より追加依頼（週次/月次両方に配信）
+  # client_email は環境変数 ARK_CLIENT_EMAIL から取得（src/delivery.py 参照）
+  # cc_emails は環境変数 ARK_CC_EMAILS（カンマ区切り）から取得
+  client_email: ""
+  cc_emails: []
   drive_folder_id: ""  # 環境変数 ARK_DRIVE_FOLDER_ID
   lark_webhook: ""    # 環境変数 LARK_WEBHOOK_URL
 

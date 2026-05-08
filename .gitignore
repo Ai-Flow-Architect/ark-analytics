@@ -19,3 +19,6 @@ logs/
 
 # Streamlit secrets（APIキー等を含むため必ず除外）
 .streamlit/secrets.toml
+
+# 内部メモ（クライアント情報・認証情報を含むため必ず除外）
+KNOWLEDGE.md
