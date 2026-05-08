@@ -137,8 +137,9 @@ def run_monthly_report(month: str, dry_run: bool = False) -> None:
     # Drive保存
     drive_url = delivery.save_to_drive(month, md_report)
 
-    # Gmail送信
-    delivery.send_gmail(month, html_report)
+    # Gmail送信（CC: settings.yaml の report.cc_emails から取得）
+    cc_emails = delivery.config.get("report", {}).get("cc_emails", []) or None
+    delivery.send_gmail(month, html_report, cc_emails=cc_emails)
 
     # Lark通知
     delivery.notify_lark(month, kpi, drive_url=drive_url)
@@ -227,10 +228,12 @@ def run_weekly_report(frequency: str = "weekly") -> None:
 <p style="font-size:12px;color:#94a3b8;">このメールは ark-analytics 自動配信システムにより送信されています。</p>
 </body></html>
 """
+    cc_emails = delivery.config.get("report", {}).get("cc_emails", []) or None
     delivery.send_gmail(
         month,
         html_body,
         to_email=None,  # ARK_CLIENT_EMAIL 環境変数から取得
+        cc_emails=cc_emails,
     )
 
     print("✅ 週次レポート完了（メール配信）")
