@@ -22,3 +22,7 @@ logs/
 
 # 内部メモ（クライアント情報・認証情報を含むため必ず除外）
 KNOWLEDGE.md
+
+# 認証情報・Secrets（追加分）
+credentials/
+secrets/
