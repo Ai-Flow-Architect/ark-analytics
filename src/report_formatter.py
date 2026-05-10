@@ -67,7 +67,7 @@ class ReportFormatter:
 
   <footer>
     このレポートはGA4データを元にAIが自動生成しました。<br>
-    生成モデル: GPT-4o | データ基盤: BigQuery | 担当: AIフローアーキテクト 五十嵐
+    生成モデル: GPT-4o | データ基盤: BigQuery | 担当: AIフローアーキテクト
   </footer>
 </body>
 </html>
@@ -146,7 +146,7 @@ class ReportFormatter:
 
 ---
 *このレポートはGA4データを元にAIが自動生成しました。*
-*生成モデル: GPT-4o | データ基盤: BigQuery | 担当: AIフローアーキテクト 五十嵐*
+*生成モデル: GPT-4o | データ基盤: BigQuery | 担当: AIフローアーキテクト*
 """
 
     @staticmethod

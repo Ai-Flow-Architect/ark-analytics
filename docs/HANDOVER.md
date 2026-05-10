@@ -1,6 +1,6 @@
 # ark-analytics 納品・引き継ぎドキュメント
 
-納品担当: 五十嵐 | 対象: BtoB事業会社A社 様（example.invalid）| 最終更新: 2026-04-24
+納品担当: AIフローアーキテクト | 対象: BtoB事業会社A社 様（example.invalid）| 最終更新: 2026-04-24
 
 ---
 
@@ -353,5 +353,5 @@ bq query --use_legacy_sql=false < sql/marts/daily_kpi_summary.sql
 
 ---
 
-*最終確認: 2026-04-24 | 担当: 五十嵐（AIフローアーキテクト）*
+*最終確認: 2026-04-24 | 担当: AIフローアーキテクト*
 *Coconalaトークルーム: https://coconala.com/talkrooms/REDACTED-TALKROOM*

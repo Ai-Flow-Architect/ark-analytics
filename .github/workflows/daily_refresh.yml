@@ -1,7 +1,7 @@
 name: Daily BQ Refresh
 
 # 受注案件のクラウド完結ルール準拠（CLAUDE.md）：
-# 旧来 五十嵐様ローカルcron で動いていた scripts/daily_refresh.sh を完全クラウド化。
+# 旧来 ローカルcron で動いていた scripts/daily_refresh.sh を完全クラウド化。
 # 2026-05-04 の週次レポート不達インシデント（marts.daily_kpi_summary が4/14で停止）を契機に新設。
 
 on:
