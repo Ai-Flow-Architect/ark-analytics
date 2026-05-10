@@ -19,3 +19,20 @@ logs/
 
 # Streamlit secrets（APIキー等を含むため必ず除外）
 .streamlit/secrets.toml
+
+# 内部メモ（クライアント情報・認証情報を含むため必ず除外）
+KNOWLEDGE.md
+
+# 認証情報・Secrets（追加分）
+credentials/
+secrets/
+
+# バックアップ・一時ファイル（CLAUDE.md 追跡禁止ルール）
+*.bak
+*~
+*.tmp
+
+# 内部メモ・引き継ぎ・PDFトレース・SECURITY_NOTES（追跡禁止）
+SECURITY_NOTES.md
+handover_*.md
+PDF_TRACE_KNOWLEDGE.md
