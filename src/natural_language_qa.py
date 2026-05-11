@@ -11,7 +11,7 @@ from openai import OpenAI
 from google.cloud import bigquery
 
 
-from src._config_loader import load_config as _load_config
+from src._config_loader import get_project_id, load_config as _load_config
 
 
 # 質問の意図からどのBQテーブルを引くかを決定する関数群
@@ -98,7 +98,7 @@ class NaturalLanguageQA:
 
     def __init__(self, config: dict | None = None) -> None:
         self.config = config or _load_config()
-        self.project_id = self.config["gcp"]["project_id"]
+        self.project_id = get_project_id(self.config)
 
         key_path = self.config["gcp"].get("service_account_key", "")
         if key_path and os.path.exists(key_path):

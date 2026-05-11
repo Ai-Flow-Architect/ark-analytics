@@ -3,7 +3,7 @@
 -- 日次KPI + ファネル を1テーブルに統合（Looker Studioはシングルソース推奨）
 -- 更新: 毎日 AM 5:30（daily_kpi_summary / conversion_funnel_daily 完了後）
 
-CREATE OR REPLACE VIEW `REDACTED-GCP-PROJECT.reports.rpt_looker_main` AS
+CREATE OR REPLACE VIEW `__ARK_PROJECT__.reports.rpt_looker_main` AS
 SELECT
   k.report_date,
 
@@ -46,7 +46,7 @@ SELECT
   f.step4_to_5_rate         AS funnel_rate_4to5,
   f.overall_inquiry_cvr     AS funnel_overall_cvr
 
-FROM `REDACTED-GCP-PROJECT.marts.daily_kpi_summary` k
-LEFT JOIN `REDACTED-GCP-PROJECT.marts.conversion_funnel_daily` f
+FROM `__ARK_PROJECT__.marts.daily_kpi_summary` k
+LEFT JOIN `__ARK_PROJECT__.marts.conversion_funnel_daily` f
   ON k.report_date = f.report_date
 ;

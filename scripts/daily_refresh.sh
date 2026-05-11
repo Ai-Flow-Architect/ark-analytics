@@ -7,14 +7,24 @@
 #   - 手動実行 (cd ~/projects/ark-analytics && ./scripts/daily_refresh.sh)
 #
 # 環境変数:
-#   - ARK_GCP_PROJECT_ID  必須（GitHub Secrets > ARK_GCP_PROJECT_ID）
+#   - ARK_GCP_PROJECT_ID    必須（GitHub Secrets > ARK_GCP_PROJECT_ID）
+#   - ARK_GA4_RAW_DATASET   必須（GA4 raw dataset 名・例: analytics_123456789）
 #   - LARK_APP_ID/SECRET/CHAT_ID  失敗時の通知用（省略時はskip）
+#
+# SQLファイル内の以下プレースホルダは実行時に sed で展開される（ベタ書き禁止）:
+#   __ARK_PROJECT__       → $ARK_GCP_PROJECT_ID
+#   __ARK_GA4_PROPID__    → $ARK_GA4_PROPERTY_ID (analytics_${PROPID} の形でも展開可)
 
 set -euo pipefail
 PROJECT="${ARK_GCP_PROJECT_ID:-}"
-if [[ -z "$PROJECT" || "$PROJECT" == *REDACTED* ]]; then
+GA4_PROPID="${ARK_GA4_PROPERTY_ID:-}"
+if [[ -z "$PROJECT" || "$PROJECT" == *REDACTED* || "$PROJECT" == __ARK* ]]; then
     echo "[FATAL] ARK_GCP_PROJECT_ID が未設定またはプレースホルダ値です: '$PROJECT'" >&2
     echo "        GitHub Actions の場合は Secrets > ARK_GCP_PROJECT_ID を確認してください。" >&2
+    exit 2
+fi
+if [[ -z "$GA4_PROPID" || "$GA4_PROPID" == *REDACTED* || "$GA4_PROPID" == __ARK* ]]; then
+    echo "[FATAL] ARK_GA4_PROPERTY_ID が未設定またはプレースホルダ値です: '$GA4_PROPID'" >&2
     exit 2
 fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,7 +49,10 @@ run_sql() {
     local label=$1
     local file=$2
     echo "[$DATE] $label 開始..." | tee -a "$LOG"
-    if bq query --project_id="$PROJECT" --use_legacy_sql=false < "$file" >> "$LOG" 2>&1; then
+    # SQLファイル内のプレースホルダを実行時展開（ベタ書き禁止ルール準拠）
+    local rendered
+    rendered=$(sed -e "s/__ARK_PROJECT__/${PROJECT}/g" -e "s/__ARK_GA4_PROPID__/${GA4_PROPID}/g" "$file")
+    if echo "$rendered" | bq query --project_id="$PROJECT" --use_legacy_sql=false >> "$LOG" 2>&1; then
         echo "[$DATE] $label 完了" | tee -a "$LOG"
     else
         echo "[$DATE] ERROR: $label 失敗" | tee -a "$LOG"

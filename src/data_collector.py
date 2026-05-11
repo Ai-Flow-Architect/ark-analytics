@@ -14,7 +14,7 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 
 
-from src._config_loader import load_config as _load_config
+from src._config_loader import get_project_id, load_config as _load_config
 
 
 class GA4DataCollector:
@@ -22,7 +22,7 @@ class GA4DataCollector:
 
     def __init__(self, config: dict | None = None) -> None:
         self.config = config or _load_config()
-        self.project_id = self.config["gcp"]["project_id"]
+        self.project_id = get_project_id(self.config)
 
         # サービスアカウントキーがあればそれを使用、なければADC
         key_path = self.config["gcp"].get("service_account_key", "")
