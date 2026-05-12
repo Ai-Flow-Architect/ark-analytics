@@ -10,6 +10,10 @@ on:
     - cron: '0 19 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write     # notify-failure 用
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -59,3 +63,16 @@ jobs:
           name: refresh-log
           path: logs/refresh_*.log
           retention-days: 14
+
+      # ---------- 失敗時の冗長化通知（Lark + Issue + Mail） ----------
+      - name: Notify failure (3 channels)
+        if: failure()
+        uses: ./.github/actions/notify-failure
+        with:
+          lark_webhook:     ${{ secrets.LARK_BOT_WEBHOOK }}
+          smtp_user:        ${{ secrets.SMTP_USER }}
+          smtp_pass:        ${{ secrets.SMTP_PASS }}
+          alert_recipients: ${{ secrets.ALERT_RECIPIENTS }}
+          github_token:     ${{ secrets.GITHUB_TOKEN }}
+          failed_step:      "daily_refresh"
+          severity:         "critical"
