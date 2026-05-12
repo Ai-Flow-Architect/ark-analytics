@@ -2,7 +2,7 @@
 -- 日次KPIサマリー（Looker Studioのメイン接続先）
 -- 更新: 毎日 AM 5:00
 
-CREATE OR REPLACE TABLE `REDACTED-GCP-PROJECT.marts.daily_kpi_summary`
+CREATE OR REPLACE TABLE `__ARK_PROJECT__.marts.daily_kpi_summary`
 PARTITION BY report_date
 AS
 WITH daily_sessions AS (
@@ -13,7 +13,7 @@ WITH daily_sessions AS (
     COUNT(DISTINCT IF(
       -- 新規ユーザー判定（初回セッション = セッション日=最初のイベント日）
       NOT EXISTS (
-        SELECT 1 FROM `REDACTED-GCP-PROJECT.staging.stg_sessions` s2
+        SELECT 1 FROM `__ARK_PROJECT__.staging.stg_sessions` s2
         WHERE s2.user_pseudo_id = s.user_pseudo_id
           AND s2.session_date < s.session_date
       ), session_id, NULL
@@ -24,7 +24,7 @@ WITH daily_sessions AS (
     ROUND(AVG(page_view_count), 2)                                     AS pages_per_session,
     COUNTIF(has_conversion)                                            AS converting_sessions
 
-  FROM `REDACTED-GCP-PROJECT.staging.stg_sessions` s
+  FROM `__ARK_PROJECT__.staging.stg_sessions` s
   GROUP BY session_date
 ),
 
@@ -40,7 +40,7 @@ daily_events AS (
       AND percent_scrolled >= 90)                                      AS scroll_90pct_count,
     COUNT(DISTINCT IF(is_conversion, session_id, NULL))               AS total_conversions
 
-  FROM `REDACTED-GCP-PROJECT.staging.stg_ga4_events`
+  FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   GROUP BY event_date
 )
 

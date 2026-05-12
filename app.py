@@ -130,7 +130,15 @@ def _init_clients():
         st.error(f"❌ 設定ファイルが見つかりません: {config_path}")
         st.stop()
 
-    project_id = cfg["gcp"]["project_id"]
+    from src._config_loader import get_project_id
+    # Streamlit Cloud secrets を環境変数に流し込む（get_project_id が読めるように）
+    if "ARK_GCP_PROJECT_ID" in st.secrets and not os.environ.get("ARK_GCP_PROJECT_ID"):
+        os.environ["ARK_GCP_PROJECT_ID"] = str(st.secrets["ARK_GCP_PROJECT_ID"])
+    try:
+        project_id = get_project_id(cfg)
+    except RuntimeError as e:
+        st.error(f"❌ GCPプロジェクトIDが解決できません: {e}")
+        st.stop()
 
     from google.cloud import bigquery
 

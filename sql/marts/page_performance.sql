@@ -2,7 +2,7 @@
 -- ページ別パフォーマンス（週次更新）
 -- 更新: 毎週月曜 AM 5:00
 
-CREATE OR REPLACE TABLE `REDACTED-GCP-PROJECT.marts.page_performance`
+CREATE OR REPLACE TABLE `__ARK_PROJECT__.marts.page_performance`
 PARTITION BY week_start
 AS
 SELECT
@@ -38,7 +38,7 @@ SELECT
   COUNTIF(event_name = 'page_view' AND device_category = 'mobile')     AS mobile_pageviews,
   COUNTIF(event_name = 'page_view' AND device_category = 'desktop')    AS desktop_pageviews
 
-FROM `REDACTED-GCP-PROJECT.staging.stg_ga4_events`
+FROM `__ARK_PROJECT__.staging.stg_ga4_events`
 WHERE page_path IS NOT NULL
   AND page_path != ''
 GROUP BY week_start, page_path

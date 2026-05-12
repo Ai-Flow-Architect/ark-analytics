@@ -2,7 +2,7 @@
 -- セッション単位に集約（1行=1セッション）
 -- 更新: 毎日 AM 4:30 (stg_ga4_events完了後)
 
-CREATE OR REPLACE TABLE `REDACTED-GCP-PROJECT.staging.stg_sessions`
+CREATE OR REPLACE TABLE `__ARK_PROJECT__.staging.stg_sessions`
 PARTITION BY session_date
 CLUSTER BY channel_grouping, device_category
 AS
@@ -43,7 +43,7 @@ WITH session_base AS (
       ORDER BY event_timestamp ASC LIMIT 1
     )[SAFE_OFFSET(0)]                                          AS first_conversion_event
 
-  FROM `REDACTED-GCP-PROJECT.staging.stg_ga4_events`
+  FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   WHERE session_id IS NOT NULL
   GROUP BY session_id, user_pseudo_id
 )

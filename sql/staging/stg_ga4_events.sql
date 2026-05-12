@@ -1,9 +1,9 @@
 -- staging.stg_ga4_events
 -- GA4 rawイベントを正規化・クレンジングするビュー
 -- 更新: 毎日 AM 4:00 (Scheduled Query)
--- プロジェクト: REDACTED-GCP-PROJECT / データセット: analytics_REDACTED-GA4-PROPID
+-- プロジェクト: __ARK_PROJECT__ / データセット: analytics___ARK_GA4_PROPID__
 
-CREATE OR REPLACE VIEW `REDACTED-GCP-PROJECT.staging.stg_ga4_events` AS
+CREATE OR REPLACE VIEW `__ARK_PROJECT__.staging.stg_ga4_events` AS
 SELECT
   PARSE_DATE('%Y%m%d', event_date)                                                   AS event_date,
   TIMESTAMP_MICROS(event_timestamp)                                                  AS event_timestamp,
@@ -54,7 +54,7 @@ SELECT
   (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'percent_scrolled') AS percent_scrolled
 
 FROM
-  `REDACTED-GCP-PROJECT.analytics_REDACTED-GA4-PROPID.events_*`
+  `__ARK_PROJECT__.analytics___ARK_GA4_PROPID__.events_*`
 WHERE
   _TABLE_SUFFIX BETWEEN
     FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL 13 MONTH))

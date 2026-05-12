@@ -23,7 +23,7 @@ st.set_page_config(
 # ─── 定数 ──────────────────────────────────────────────────────
 PRIMARY   = "#1a56db"
 BG_CARD   = "#f8faff"
-PROJECT_ID = "REDACTED-GCP-PROJECT"
+# PROJECT_ID は環境変数 ARK_GCP_PROJECT_ID から src._config_loader.get_project_id で解決
 
 EXAMPLE_QUESTIONS = {
     "📄 ページ分析": [
@@ -134,7 +134,10 @@ def _init_clients():
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
-    project_id = cfg["gcp"]["project_id"]
+    from src._config_loader import get_project_id
+    if "ARK_GCP_PROJECT_ID" in st.secrets and not os.environ.get("ARK_GCP_PROJECT_ID"):
+        os.environ["ARK_GCP_PROJECT_ID"] = str(st.secrets["ARK_GCP_PROJECT_ID"])
+    project_id = get_project_id(cfg)
     key_path = cfg["gcp"].get("service_account_key", "")
 
     if key_path and os.path.exists(key_path):
