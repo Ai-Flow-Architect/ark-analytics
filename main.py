@@ -54,7 +54,8 @@ def _run_freshness_check(threshold_days: int, source: str, dry_run: bool) -> Non
         [sys.executable, script,
          "--threshold-days", str(threshold_days),
          "--source", source],
-        capture_output=True, text=True
+        capture_output=True, text=True,
+        env=os.environ.copy(),
     )
     if result.stdout:
         print(result.stdout, end="")
