@@ -182,6 +182,22 @@ QAアプリ内に統合。施策ごとに「実装難度」「ビジネスイン
 
 ---
 
+## 🛡️ 監視冗長化（4チェーン + 外部Dead Man Switch）
+
+GitHub Actions の単一障害でもクライアント影響が出ないよう、5経路の冗長化監視を導入。
+
+| # | チェーン | 役割 |
+|---|----------|------|
+| ① | workflow失敗 → Lark Bot 通知 | 即時IM通知（5分以内） |
+| ② | workflow失敗 → GitHub Issue 自動作成 | 永続化アラート（24h内は同一Issueへ追記） |
+| ③ | workflow失敗 → SMTP メール通知 | アウトオブバンド経路（GitHub/Lark独立） |
+| ④ | health_check.yml メタ監視 | 既存workflow最終成功時刻 + BQ鮮度を毎日チェック |
+| ⑤ | 外部 Healthchecks.io ping | 全GitHub死亡時の最終防衛線（30h ping欠落で発報） |
+
+詳細設計: [docs/MONITORING_DESIGN.md](docs/MONITORING_DESIGN.md)
+
+---
+
 ## 📞 開発者・お問い合わせ
 
 - **開発**: AIフローアーキテクト
