@@ -8,13 +8,14 @@ MAX(report_date) が today - threshold_days より古ければ Lark通知 + sys.
 
 環境変数:
   GOOGLE_APPLICATION_CREDENTIALS  必須（GitHub Actionsでは auth ステップで設定済）
-  GOOGLE_CLOUD_PROJECT             省略時 REDACTED-GCP-PROJECT
+  ARK_GCP_PROJECT_ID               必須（src._config_loader.get_project_id で解決）
+  GOOGLE_CLOUD_PROJECT             任意（ARK_GCP_PROJECT_ID 未設定時のフォールバック）
   LARK_APP_ID/SECRET/CHAT_ID       通知用（src/alert.py 経由）
 
 終了コード:
   0: 鮮度OK（threshold以内）
   1: データが古い・テーブルなし → Lark通知済み
-  2: 引数エラー
+  2: 引数エラー / プロジェクトID未解決（=設定不備）
 """
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT_DIR)
 
 from src.alert import notify_failure  # noqa: E402
+from src._config_loader import get_project_id  # noqa: E402
 
 
 def main() -> int:
@@ -38,7 +40,15 @@ def main() -> int:
                         help="呼び出し元を識別する任意文字列（通知の context に入る）")
     args = parser.parse_args()
 
-    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "REDACTED-GCP-PROJECT")
+    try:
+        project_id = get_project_id()
+    except RuntimeError as e:
+        notify_failure(
+            job="data_freshness_check",
+            reason=f"GCPプロジェクトID未解決: {e}",
+            context={"source": args.source},
+        )
+        return 2
 
     try:
         from google.cloud import bigquery
@@ -46,7 +56,7 @@ def main() -> int:
         notify_failure(
             job="data_freshness_check",
             reason="google-cloud-bigquery が未インストール",
-            context={"source": args.source},
+            context={"source": args.source, "project": project_id},
         )
         return 1
 

@@ -7,11 +7,16 @@
 #   - 手動実行 (cd ~/projects/ark-analytics && ./scripts/daily_refresh.sh)
 #
 # 環境変数:
-#   - PROJECT_ID         (省略時 "REDACTED-GCP-PROJECT")
-#   - LARK_WEBHOOK_URL   (失敗時の通知用・省略時はskip)
+#   - ARK_GCP_PROJECT_ID  必須（GitHub Secrets > ARK_GCP_PROJECT_ID）
+#   - LARK_APP_ID/SECRET/CHAT_ID  失敗時の通知用（省略時はskip）
 
-set -e
-PROJECT="${PROJECT_ID:-REDACTED-GCP-PROJECT}"
+set -euo pipefail
+PROJECT="${ARK_GCP_PROJECT_ID:-}"
+if [[ -z "$PROJECT" || "$PROJECT" == *REDACTED* ]]; then
+    echo "[FATAL] ARK_GCP_PROJECT_ID が未設定またはプレースホルダ値です: '$PROJECT'" >&2
+    echo "        GitHub Actions の場合は Secrets > ARK_GCP_PROJECT_ID を確認してください。" >&2
+    exit 2
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="$BASE_DIR/logs"
