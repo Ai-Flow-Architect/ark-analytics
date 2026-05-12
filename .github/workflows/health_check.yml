@@ -1,0 +1,118 @@
+name: Health Check (Meta Monitoring)
+
+# メタ監視: 「workflow自体が動いていない」「BQデータが古い」を毎日検知
+# 既存4 workflowが全滅しても、これだけは外部Healthchecks.io 経由で検知される
+
+on:
+  schedule:
+    # 毎日 21:00 UTC = 翌日 JST AM 6:00（daily_refresh の2時間後）
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read     # GitHub API /actions/runs 読み取り
+  issues: write     # notify-failure 用
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ---------- (A) 既存workflowの「last successful run」を48h閾値でチェック ----------
+      - name: Check workflow run freshness (meta)
+        id: meta_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          NOW_EPOCH=$(date -u +%s)
+          FAILED=""
+          for WF in daily_refresh.yml weekly_report.yml monthly_report.yml; do
+            LATEST_SUCCESS_AT=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${WF}/runs?status=success&per_page=1" \
+              --jq '.workflow_runs[0].updated_at // empty')
+            if [ -z "$LATEST_SUCCESS_AT" ]; then
+              echo "::warning ::${WF} に成功実行履歴がありません"
+              FAILED="${FAILED} ${WF}(no-success)"
+              continue
+            fi
+            LAST_EPOCH=$(date -u -d "$LATEST_SUCCESS_AT" +%s)
+            DIFF_HOURS=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
+            echo "${WF}: last success ${DIFF_HOURS}h ago"
+            # weekly_report は168h(7日)、monthly_reportは744h(31日)許容
+            case "$WF" in
+              daily_refresh.yml)   LIMIT=48 ;;
+              weekly_report.yml)   LIMIT=168 ;;
+              monthly_report.yml)  LIMIT=744 ;;
+            esac
+            if [ "$DIFF_HOURS" -gt "$LIMIT" ]; then
+              FAILED="${FAILED} ${WF}(${DIFF_HOURS}h>${LIMIT}h)"
+            fi
+          done
+          if [ -n "$FAILED" ]; then
+            echo "META_FAILED=$FAILED" >> "$GITHUB_OUTPUT"
+            echo "::error ::Stale workflows detected:$FAILED"
+            exit 1
+          fi
+
+      # ---------- (B) BQ データ鮮度チェック（既存スクリプト流用） ----------
+      - name: Authenticate to Google Cloud
+        if: success() || failure()
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Check BigQuery freshness
+        if: success() || failure()
+        id: bq_check
+        env:
+          ARK_GCP_PROJECT_ID: ${{ secrets.ARK_GCP_PROJECT_ID }}
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.ARK_GCP_PROJECT_ID }}
+          LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
+          LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+          LARK_CHAT_ID: ${{ secrets.LARK_CHAT_ID }}
+        run: |
+          python3 scripts/check_data_freshness.py --threshold-days 2 --source health_check
+
+      # ---------- (C) 外部 Healthchecks.io へ生存ping（success時のみ） ----------
+      - name: Ping external dead man switch (Healthchecks.io)
+        if: success()
+        env:
+          HC_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+        run: |
+          set +x
+          if [ -z "${HC_URL:-}" ]; then
+            echo "[health_check] HEALTHCHECKS_PING_URL 未設定、pingスキップ"
+            exit 0
+          fi
+          curl --max-time 10 --retry 2 --silent --show-error "$HC_URL" || true
+
+      # ---------- (D) 失敗時は 3経路通知 ----------
+      - name: Notify failure (3 channels)
+        if: failure()
+        uses: ./.github/actions/notify-failure
+        with:
+          lark_webhook:     ${{ secrets.LARK_BOT_WEBHOOK }}
+          smtp_user:        ${{ secrets.SMTP_USER }}
+          smtp_pass:        ${{ secrets.SMTP_PASS }}
+          alert_recipients: ${{ secrets.ALERT_RECIPIENTS }}
+          github_token:     ${{ secrets.GITHUB_TOKEN }}
+          failed_step:      "meta_or_bq_check"
+          severity:         "critical"

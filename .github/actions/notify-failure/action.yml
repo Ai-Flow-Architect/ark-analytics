@@ -1,0 +1,154 @@
+name: "Notify Failure (Lark + Issue + Mail)"
+description: "ワークフロー失敗時に Lark Bot / GitHub Issue / SMTP メール の3経路を順次叩く（個別失敗は許容）"
+
+inputs:
+  lark_webhook:
+    description: "Lark Bot Incoming Webhook URL（GitHub Secret経由で渡すこと）"
+    required: true
+  smtp_user:
+    description: "SMTP送信元アドレス"
+    required: true
+  smtp_pass:
+    description: "SMTP送信元パスワード（Gmailアプリパスワード等）"
+    required: true
+  alert_recipients:
+    description: "通知先メール（カンマ区切り）"
+    required: true
+  github_token:
+    description: "Issue作成用GITHUB_TOKEN"
+    required: true
+  failed_step:
+    description: "失敗したstep名（任意・分かれば渡す）"
+    required: false
+    default: "unknown"
+  severity:
+    description: "通知重要度（info/warn/critical）"
+    required: false
+    default: "critical"
+
+runs:
+  using: "composite"
+  steps:
+    # ---------- (1/3) Lark Bot 通知 ----------
+    - name: "[1/3] Notify Lark Bot"
+      if: always()
+      continue-on-error: true
+      shell: bash
+      env:
+        LARK_WEBHOOK: ${{ inputs.lark_webhook }}
+        WORKFLOW_NAME: ${{ github.workflow }}
+        FAILED_STEP: ${{ inputs.failed_step }}
+        SEVERITY: ${{ inputs.severity }}
+        COMMIT_SHA: ${{ github.sha }}
+        ACTOR: ${{ github.actor }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set +x  # secret漏洩防止: コマンドエコー禁止
+        if [ -z "${LARK_WEBHOOK:-}" ]; then
+          echo "[notify-failure] LARK_WEBHOOK 未設定、Lark通知スキップ"
+          exit 0
+        fi
+        PAYLOAD=$(cat <<EOF
+        {
+          "msg_type": "post",
+          "content": {
+            "post": {
+              "ja_jp": {
+                "title": "[AIフローアーキテクト] ${WORKFLOW_NAME} 失敗",
+                "content": [
+                  [{"tag": "text", "text": "Workflow: ${WORKFLOW_NAME}"}],
+                  [{"tag": "text", "text": "Failed step: ${FAILED_STEP}"}],
+                  [{"tag": "text", "text": "Severity: ${SEVERITY}"}],
+                  [{"tag": "text", "text": "Commit: ${COMMIT_SHA}"}],
+                  [{"tag": "text", "text": "Actor: ${ACTOR}"}],
+                  [{"tag": "a", "text": "View run logs", "href": "${RUN_URL}"}]
+                ]
+              }
+            }
+          }
+        }
+        EOF
+        )
+        # 通知ループ防止: 1回のみPOST、リトライしない
+        curl --max-time 15 --silent --show-error \
+          -X POST -H "Content-Type: application/json" \
+          --data "$PAYLOAD" "$LARK_WEBHOOK" || echo "[notify-failure] Lark POST failed (continuing)"
+
+    # ---------- (2/3) GitHub Issue 自動作成 ----------
+    - name: "[2/3] Open or Update GitHub Issue"
+      if: always()
+      continue-on-error: true
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const workflow = "${{ github.workflow }}";
+          const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+          const label = "monitoring-alert";
+          const title = `[ALERT] ${workflow} failed (auto-opened)`;
+          const failedStep = `${{ inputs.failed_step }}`;
+          const severity = `${{ inputs.severity }}`;
+          const sha = `${{ github.sha }}`;
+          const actor = `${{ github.actor }}`;
+
+          // 通知ループ防止: 既存open Issue（同workflow / 24h以内）があれば更新のみ
+          const existing = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo:  context.repo.repo,
+            state: "open",
+            labels: label,
+            per_page: 30,
+          });
+          const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const dup = existing.data.find(i =>
+            i.title.includes(workflow) && new Date(i.updated_at) > since
+          );
+
+          const body = [
+            `## Workflow失敗を自動検知しました`,
+            ``,
+            `- Workflow: \`${workflow}\``,
+            `- Failed step: \`${failedStep}\``,
+            `- Severity: \`${severity}\``,
+            `- Commit SHA: \`${sha}\``,
+            `- Actor: \`${actor}\``,
+            `- Run URL: ${runUrl}`,
+            ``,
+            `> このIssueは notify-failure composite action が自動生成しました。`,
+            `> 24h以内の同一workflow失敗はこのIssueに追記されます。`,
+            `> 復旧したら手動でcloseしてください（誤close事故防止のため自動closeは無効）。`,
+          ].join("\n");
+
+          if (dup) {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: dup.number,
+              body: `### 再発検知 (${new Date().toISOString()})\n\n${body}`,
+            });
+            core.notice(`Updated existing issue #${dup.number}`);
+          } else {
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title, body, labels: [label, "automated"],
+            });
+            core.notice(`Created new issue #${created.data.number}`);
+          }
+
+    # ---------- (3/3) SMTP メール通知 ----------
+    - name: "[3/3] Send SMTP Mail (out-of-band)"
+      if: always()
+      continue-on-error: true
+      shell: bash
+      env:
+        SMTP_USER: ${{ inputs.smtp_user }}
+        SMTP_PASS: ${{ inputs.smtp_pass }}
+        ALERT_RECIPIENTS: ${{ inputs.alert_recipients }}
+        WORKFLOW_NAME: ${{ github.workflow }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        FAILED_STEP: ${{ inputs.failed_step }}
+        SEVERITY: ${{ inputs.severity }}
+        COMMIT_SHA: ${{ github.sha }}
+        ACTOR: ${{ github.actor }}
+      run: |
+        set +x
+        python3 "${{ github.action_path }}/../../../scripts/notify_mail.py"
