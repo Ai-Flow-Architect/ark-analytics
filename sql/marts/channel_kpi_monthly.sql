@@ -2,7 +2,7 @@
 -- 月次×チャネル別パフォーマンス（経営層レポート用）
 -- 更新: 毎月1日 AM 6:00
 
-CREATE OR REPLACE TABLE `REDACTED-GCP-PROJECT.marts.channel_kpi_monthly`
+CREATE OR REPLACE TABLE `__ARK_PROJECT__.marts.channel_kpi_monthly`
 PARTITION BY report_month
 AS
 SELECT
@@ -19,6 +19,6 @@ SELECT
                                                                  AS conversion_rate,
   ROUND(AVG(session_duration_sec), 1)                           AS avg_session_duration
 
-FROM `REDACTED-GCP-PROJECT.staging.stg_sessions`
+FROM `__ARK_PROJECT__.staging.stg_sessions`
 GROUP BY report_month, channel_grouping
 ;

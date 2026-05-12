@@ -2,7 +2,8 @@
 # 機密情報は環境変数で管理（このファイルにAPIキーを直書きしない）
 
 gcp:
-  project_id: "REDACTED-GCP-PROJECT"
+  # project_id は環境変数 ARK_GCP_PROJECT_ID から取得（src/_config_loader.get_project_id 参照）
+  # 機密情報・クライアント固有値は YAML に書かない方針
   dataset_staging: "staging"
   dataset_marts: "marts"
   dataset_reports: "reports"
@@ -11,9 +12,10 @@ gcp:
   service_account_key: ""
 
 ga4:
-  property_id: "REDACTED-GA4-PROPID"
-  # GA4 BigQueryエクスポートデータセット
-  raw_dataset: "analytics_REDACTED-GA4-PROPID"
+  # property_id / raw_dataset は環境変数で上書きされる（_config_loader.load_config）
+  # ARK_GA4_PROPERTY_ID / ARK_GA4_RAW_DATASET
+  property_id: ""
+  raw_dataset: ""
 
 kpi_targets:
   monthly_sessions: 5000

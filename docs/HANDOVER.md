@@ -353,5 +353,50 @@ bq query --use_legacy_sql=false < sql/marts/daily_kpi_summary.sql
 
 ---
 
-*最終確認: 2026-04-24 | 担当: AIフローアーキテクト*
+## 14. Secrets ローテーション手順（2026-05-11 追記）
+
+### 14.1 GCPプロジェクトID（ARK_GCP_PROJECT_ID）
+
+`ARK_GCP_PROJECT_ID` は src/_config_loader.get_project_id() が唯一参照する SSOT。
+本プロジェクトでは以下3か所でしか値を持たない（ベタ書き禁止）。
+
+| 保管場所 | 用途 |
+|---------|------|
+| GitHub Secrets `ARK_GCP_PROJECT_ID` | GitHub Actions（daily_refresh / weekly_report / monthly_report） |
+| Streamlit Cloud Secrets `ARK_GCP_PROJECT_ID` | Streamlit QAアプリ |
+| ローカル `.env` の `ARK_GCP_PROJECT_ID` | 手動実行・デバッグ時 |
+
+#### ローテ手順（3ステップ・厳密遵守）
+
+1. **新プロジェクト準備**: GCPコンソールで新プロジェクト作成 → 同名のBQ dataset (`staging` / `marts` / `reports`) を作成 → GA4 BigQuery Export 先を切替
+2. **Secrets 同時更新**: 上記3か所を**同じ値**に書き換え（GitHub Web UI / Streamlit Cloud 管理画面 / `.env`）
+3. **動作確認**:
+   ```bash
+   gh workflow run daily_refresh.yml --repo Ai-Flow-Architect/ark-analytics
+   gh run watch --repo Ai-Flow-Architect/ark-analytics
+   ```
+   失敗時は Lark 通知が `data_freshness_check` で来るので即ロールバック。
+
+### 14.2 SA鍵 (GCP_SERVICE_ACCOUNT_KEY)
+
+SA鍵 と `ARK_GCP_PROJECT_ID` のペアリングが崩れると BQ 権限エラーになる。
+ローテ時は必ず以下を同時更新する:
+
+- `GCP_SERVICE_ACCOUNT_KEY`（JSON 全文）
+- 新しい SA に `BigQuery Data Editor` / `BigQuery Job User` ロール付与
+
+### 14.3 ガードレール（再発防止）
+
+- `tests/test_no_placeholder.py` が CI で `REDACTED-*` パターンを検出 → push ブロック
+- `get_project_id()` が空文字・プレースホルダで RuntimeError → 実行ブロック
+- 上記2層が両方発動するので「プレースホルダのまま master 流入」は物理的に起こせない
+
+### 14.4 過去インシデント
+
+- **2026-05-04**: marts.daily_kpi_summary が 4/14 で停止 → daily_refresh のクラウド化で解消
+- **2026-05-11**: REDACTED-GCP-PROJECT プレースホルダが本番YAMLに残存しBQ 400エラー → 本ガードレール追加
+
+---
+
+*最終確認: 2026-05-11 | 担当: AIフローアーキテクト*
 *Coconalaトークルーム: https://coconala.com/talkrooms/REDACTED-TALKROOM*

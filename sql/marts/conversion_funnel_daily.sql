@@ -5,7 +5,7 @@
 -- ※ cta_click は GTMタグ②（CTAクリックトラッキング）設置後から計測開始
 -- 更新: 毎日 AM 5:00
 
-CREATE OR REPLACE TABLE `REDACTED-GCP-PROJECT.marts.conversion_funnel_daily`
+CREATE OR REPLACE TABLE `__ARK_PROJECT__.marts.conversion_funnel_daily`
 PARTITION BY report_date
 AS
 WITH funnel_steps AS (
@@ -46,7 +46,7 @@ WITH funnel_steps AS (
     -- Step6: 資料DL（並行CVルート）
     COUNT(DISTINCT IF(event_name = 'file_download', session_id, NULL))    AS step5b_download
 
-  FROM `REDACTED-GCP-PROJECT.staging.stg_ga4_events`
+  FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   GROUP BY event_date
 )
 
