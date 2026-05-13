@@ -63,7 +63,10 @@ class ReportDelivery:
                 smtp.login(sender, app_password)
                 all_recipients = [recipient] + (cc_emails or [])
                 smtp.sendmail(sender, all_recipients, msg.as_string())
-            print(f"✅ Gmail送信完了 → {recipient}")
+            cc_count = len(cc_emails or [])
+            print(
+                f"✅ Gmail送信完了 → To: 1名 / CC: {cc_count}名 / 合計: {len(all_recipients)}名"
+            )
             return True
         except Exception as e:
             print(f"❌ Gmail送信失敗: {e}")

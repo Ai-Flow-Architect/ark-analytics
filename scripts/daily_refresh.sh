@@ -61,7 +61,8 @@ run_sql() {
     fi
 }
 
-# staging（VIEW更新不要・stg_sessionsテーブルのみ）
+# staging（VIEW: definition変更を確実に反映するため毎日 CREATE OR REPLACE）
+run_sql "staging.stg_ga4_events (VIEW)"   "$SQL_DIR/staging/stg_ga4_events.sql"
 run_sql "staging.stg_sessions"            "$SQL_DIR/staging/stg_sessions.sql"
 
 # marts（VIEW→TABLE順）
@@ -69,6 +70,9 @@ run_sql "marts.daily_kpi_summary"         "$SQL_DIR/marts/daily_kpi_summary.sql"
 run_sql "marts.conversion_funnel_daily"   "$SQL_DIR/marts/conversion_funnel_daily.sql"
 run_sql "marts.channel_kpi_monthly"       "$SQL_DIR/marts/channel_kpi_monthly.sql"
 run_sql "marts.page_performance"          "$SQL_DIR/marts/page_performance.sql"
+
+# reports（VIEW: Looker Studio接続先・definition変更を毎日反映）
+run_sql "reports.rpt_looker_main (VIEW)"  "$SQL_DIR/reports/rpt_looker_main.sql"
 
 echo "[$DATE] === 日次更新完了 → 鮮度チェック ===" | tee -a "$LOG"
 
