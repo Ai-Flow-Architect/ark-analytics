@@ -152,6 +152,35 @@ def test_rpt_looker_main_has_pct_columns():
     )
 
 
+def test_pct_columns_have_multiplication_by_100():
+    """_pct 接尾辞列は `* 100` を経由してパーセント表記になっていることを保証する。
+
+    退行防止: 将来のリファクタで `ROUND(rate * 100, 2) AS rate_pct` が
+    `ROUND(rate, 2) AS rate_pct` に変わると、列名は _pct のままだが値が
+    0.0xxx の素値になり、Looker 側で「%書式」を当てている運用者だけ
+    1/100 表示になる事故が CI を通り抜けてしまう。
+    """
+    path = os.path.join(ROOT, "sql", "reports", "rpt_looker_main.sql")
+    with open(path, "r", encoding="utf-8") as f:
+        sql = f.read()
+    # _pct AS 行を抽出（行末コメントは除く）
+    pct_lines = []
+    for line in sql.splitlines():
+        sql_part = line.split("--", 1)[0]
+        m = re.search(r"AS\s+([a-zA-Z_]+_pct)\b", sql_part)
+        if m:
+            pct_lines.append((m.group(1), sql_part))
+    assert pct_lines, "rpt_looker_main.sql に _pct 列が1つも見つかりません"
+    offenders: list[str] = []
+    for col, line in pct_lines:
+        if "* 100" not in line and "*100" not in line:
+            offenders.append(f"{col}: {line.strip()}")
+    assert not offenders, (
+        f"_pct 列のうち '* 100' を含まない列が検出されました（退行リスク）: {offenders}. "
+        f"パーセント表記 (0〜100) を返すには必ず `* 100` を経由してください。"
+    )
+
+
 def test_gtm_event_names_appear_in_sql():
     """GTM が送出するイベント名のうち、SQL で集計対象になるものが実在する。"""
     all_event_literals: set[str] = set()
