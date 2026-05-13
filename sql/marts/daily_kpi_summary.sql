@@ -36,10 +36,9 @@ daily_events AS (
     COUNTIF(event_name = 'book_appointment')                          AS appointment_bookings,
     COUNTIF(event_name = 'page_view'
       AND page_path LIKE '%/contact%')                                AS contact_form_views,
-    -- GTM タグ① スクロール深度トラッキング: gtag('event', 'scroll_depth', {scroll_pct: m})
-    -- stg_ga4_events で scroll_pct → percent_scrolled に AS 済み
+    -- GTM タグ①: gtag('event','scroll_depth',{scroll_pct: 25|50|75|90})
     COUNTIF(event_name = 'scroll_depth'
-      AND percent_scrolled >= 90)                                      AS scroll_90pct_count,
+      AND scroll_pct >= 90)                                      AS scroll_90pct_count,
     COUNT(DISTINCT IF(is_conversion, session_id, NULL))               AS total_conversions
 
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`

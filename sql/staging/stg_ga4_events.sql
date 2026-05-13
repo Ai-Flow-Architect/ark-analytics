@@ -50,10 +50,9 @@ SELECT
     'book_appointment'   -- 相談申込（未実装・将来追加予定）
   )                                                                                  AS is_conversion,
 
-  -- スクロール・CTA
-  -- GTM の scroll_depth タグは event_params.key='scroll_pct' で送信（docs/GTM_TAGS.md ①）
-  -- 下流SQL互換のため AS は percent_scrolled のまま保持
-  (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'scroll_pct') AS percent_scrolled
+  -- スクロール深度（GTM タグ① scroll_depth が送る event_params.key='scroll_pct'）
+  -- 列名も GTM 送信パラメータ名に合わせて scroll_pct で統一
+  (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'scroll_pct') AS scroll_pct
 
 FROM
   `__ARK_PROJECT__.analytics___ARK_GA4_PROPID__.events_*`
