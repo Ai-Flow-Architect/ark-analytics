@@ -19,9 +19,9 @@ SELECT
     IF(event_name = 'page_view', engagement_time_msec / 1000, NULL)
   ), 1)                                                                  AS avg_time_on_page_sec,
   -- GTM タグ①: gtag('event', 'scroll_depth', {scroll_pct: 25|50|75|90})
-  COUNTIF(event_name = 'scroll_depth' AND percent_scrolled >= 90)       AS scroll_90pct_count,
+  COUNTIF(event_name = 'scroll_depth' AND scroll_pct >= 90)       AS scroll_90pct_count,
   ROUND(SAFE_DIVIDE(
-    COUNTIF(event_name = 'scroll_depth' AND percent_scrolled >= 90),
+    COUNTIF(event_name = 'scroll_depth' AND scroll_pct >= 90),
     COUNTIF(event_name = 'page_view')
   ), 4)                                                                  AS scroll_90pct_rate,
 

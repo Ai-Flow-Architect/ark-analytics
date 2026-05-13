@@ -107,6 +107,32 @@ def test_scroll_param_name_matches_gtm():
     )
 
 
+def test_scroll_pct_column_name_is_unified():
+    """scroll_pct の列名がパイプライン全体で統一されている（命名負債解消）。
+
+    旧バグ: stg_ga4_events で `scroll_pct AS percent_scrolled` と AS で偽装し、
+    下流SQLが `percent_scrolled` を参照する命名不一致を放置していた。
+    """
+    sql_files = _read_sql_files()
+    offenders: list[tuple[str, int]] = []
+    for rel, sql in sql_files.items():
+        # CRM風コメントや日本語注釈中の "percent_scrolled" は無視するため
+        # SQL token としての出現のみカウント
+        for i, line in enumerate(sql.splitlines(), 1):
+            # コメント行は除外
+            stripped = line.strip()
+            if stripped.startswith("--") or stripped.startswith("/*"):
+                continue
+            # コメント前のSQL部分のみ判定
+            sql_part = line.split("--", 1)[0]
+            if re.search(r"\bpercent_scrolled\b", sql_part):
+                offenders.append((rel, i))
+    assert not offenders, (
+        f"旧列名 'percent_scrolled' が SQL に残っています: {offenders}. "
+        f"`scroll_pct` に統一してください（GTM 送信パラメータ名と一致）。"
+    )
+
+
 def test_rpt_looker_main_has_pct_columns():
     """Looker 単位統一のため `_pct` 接尾辞列が rpt_looker_main に存在する。"""
     path = os.path.join(ROOT, "sql", "reports", "rpt_looker_main.sql")
