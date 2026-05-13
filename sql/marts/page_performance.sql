@@ -18,16 +18,17 @@ SELECT
   ROUND(AVG(
     IF(event_name = 'page_view', engagement_time_msec / 1000, NULL)
   ), 1)                                                                  AS avg_time_on_page_sec,
-  COUNTIF(event_name = 'scroll' AND percent_scrolled >= 90)             AS scroll_90pct_count,
+  -- GTM タグ①: gtag('event', 'scroll_depth', {scroll_pct: 25|50|75|90})
+  COUNTIF(event_name = 'scroll_depth' AND percent_scrolled >= 90)       AS scroll_90pct_count,
   ROUND(SAFE_DIVIDE(
-    COUNTIF(event_name = 'scroll' AND percent_scrolled >= 90),
+    COUNTIF(event_name = 'scroll_depth' AND percent_scrolled >= 90),
     COUNTIF(event_name = 'page_view')
   ), 4)                                                                  AS scroll_90pct_rate,
 
-  -- CTAクリック
-  COUNTIF(event_name = 'click')                                         AS cta_clicks,
+  -- CTAクリック: GTM タグ② gtag('event', 'cta_click', {cta_location, cta_type, ...})
+  COUNTIF(event_name = 'cta_click')                                     AS cta_clicks,
   ROUND(SAFE_DIVIDE(
-    COUNTIF(event_name = 'click'),
+    COUNTIF(event_name = 'cta_click'),
     COUNTIF(event_name = 'page_view')
   ), 4)                                                                  AS cta_click_rate,
 
