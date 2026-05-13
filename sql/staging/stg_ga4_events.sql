@@ -51,7 +51,9 @@ SELECT
   )                                                                                  AS is_conversion,
 
   -- スクロール・CTA
-  (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'percent_scrolled') AS percent_scrolled
+  -- GTM の scroll_depth タグは event_params.key='scroll_pct' で送信（docs/GTM_TAGS.md ①）
+  -- 下流SQL互換のため AS は percent_scrolled のまま保持
+  (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'scroll_pct') AS percent_scrolled
 
 FROM
   `__ARK_PROJECT__.analytics___ARK_GA4_PROPID__.events_*`
