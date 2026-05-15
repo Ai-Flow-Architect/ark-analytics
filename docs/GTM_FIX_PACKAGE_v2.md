@@ -88,15 +88,17 @@ BQ に `page_view` 802件 / `session_start` 414件 が来ている = **GTMコン
 
 ```html
 <script>
+/* v2.1 hardened 2026-05-15 (/harden: dataLayerガード冒頭化 / 90%後listener解除 / null安全) */
 (function() {
+  window.dataLayer = window.dataLayer || [];
   var milestones = [25, 50, 75, 90];
   var fired = {};
 
   function getScrollPct() {
-    var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-    var docHeight = Math.max(
-      document.body.scrollHeight, document.documentElement.scrollHeight
-    ) - window.innerHeight;
+    var scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+    var body = document.body || {};
+    var docEl = document.documentElement || {};
+    var docHeight = Math.max(body.scrollHeight || 0, docEl.scrollHeight || 0) - window.innerHeight;
     return docHeight > 0 ? Math.round(scrollTop / docHeight * 100) : 0;
   }
 
@@ -105,7 +107,6 @@ BQ に `page_view` 802件 / `session_start` 414件 が来ている = **GTMコン
     milestones.forEach(function(m) {
       if (pct >= m && !fired[m]) {
         fired[m] = true;
-        window.dataLayer = window.dataLayer || [];
         window.dataLayer.push({
           'event': 'ce_scroll_depth',
           'sd_scroll_pct': m,
@@ -113,6 +114,7 @@ BQ に `page_view` 802件 / `session_start` 414件 が来ている = **GTMコン
         });
       }
     });
+    if (fired[90]) window.removeEventListener('scroll', onScroll);
   }
 
   window.addEventListener('scroll', onScroll, { passive: true });
@@ -124,31 +126,36 @@ BQ に `page_view` 802件 / `session_start` 414件 が来ている = **GTMコン
 
 ```html
 <script>
+/* v2.1 hardened 2026-05-15 (/harden: 重複登録ガード / テキストノード対応 / className SVG安全 / innerText null安全) */
 (function() {
+  if (window.__ceCtaBound) return;
+  window.__ceCtaBound = true;
+  window.dataLayer = window.dataLayer || [];
   var ctaSelectors = [
     '.cta-button', '.btn-contact',
     'a[href*="/contact"]', 'a[href*="contact.html"]', '[data-cta]'
   ];
 
   function getCtaLocation(el) {
-    if (el.dataset.ctaLocation) return el.dataset.ctaLocation;
+    if (el.dataset && el.dataset.ctaLocation) return el.dataset.ctaLocation;
     var rect = el.getBoundingClientRect();
     var absTop = rect.top + window.pageYOffset;
-    var docHeight = document.documentElement.scrollHeight;
+    var docHeight = document.documentElement.scrollHeight || 0;
     var pct = docHeight > 0 ? absTop / docHeight : 0;
     if (pct < 0.33) return 'hero';
     if (pct < 0.66) return 'mid_page';
     return 'footer';
   }
   function getCtaType(el) {
-    if (el.dataset.ctaType) return el.dataset.ctaType;
+    if (el.dataset && el.dataset.ctaType) return el.dataset.ctaType;
     if (el.closest('nav')) return 'nav';
-    if (el.tagName === 'BUTTON' || el.className.match(/btn|cta/i)) return 'button';
+    var cls = (typeof el.className === 'string') ? el.className : '';
+    if (el.tagName === 'BUTTON' || /btn|cta/i.test(cls)) return 'button';
     if (el.tagName === 'A') return 'text_link';
     return 'button';
   }
   function getCtaPurpose(el) {
-    if (el.dataset.ctaPurpose) return el.dataset.ctaPurpose;
+    if (el.dataset && el.dataset.ctaPurpose) return el.dataset.ctaPurpose;
     var s = (el.href || '') + (el.innerText || '');
     if (/contact|問い合わせ|相談/.test(s)) return 'contact';
     if (/download|dl|資料/.test(s)) return 'download';
@@ -156,26 +163,27 @@ BQ に `page_view` 802件 / `session_start` 414件 が来ている = **GTMコン
     return 'contact';
   }
   function getCtaId(el, loc, type) {
-    if (el.dataset.ctaId) return el.dataset.ctaId;
+    if (el.dataset && el.dataset.ctaId) return el.dataset.ctaId;
     if (el.id) return el.id;
     return loc + '-' + type;
   }
 
   document.addEventListener('click', function(e) {
     var target = e.target;
+    if (target && target.nodeType === 3) target = target.parentNode; /* テキストノード→親要素 */
+    if (!target || target.nodeType !== 1 || !target.closest) return;
     for (var i = 0; i < ctaSelectors.length; i++) {
       var el = target.closest(ctaSelectors[i]);
       if (el) {
         var loc = getCtaLocation(el);
         var type = getCtaType(el);
-        window.dataLayer = window.dataLayer || [];
         window.dataLayer.push({
           'event': 'ce_cta_click',
           'cc_cta_location': loc,
           'cc_cta_type': type,
           'cc_cta_purpose': getCtaPurpose(el),
           'cc_cta_id': getCtaId(el, loc, type),
-          'cc_cta_text': el.innerText.trim().substring(0, 50),
+          'cc_cta_text': ((el.innerText || el.textContent || '').trim()).substring(0, 50),
           'cc_page_path': window.location.pathname
         });
         break;
@@ -192,32 +200,39 @@ BQ に `page_view` 802件 / `session_start` 414件 が来ている = **GTMコン
 
 ```html
 <script>
+/* v2.1 hardened 2026-05-15 (/harden 🔴: DOM未構築ガード / form[name="form1"]優先 / 遅延描画リトライ / 重複防止) */
 (function() {
-  var form = document.querySelector('form');
-  if (!form) return;
-  var started = false;
+  window.dataLayer = window.dataLayer || [];
 
-  form.addEventListener('focusin', function(e) {
-    if (!started && e.target.tagName !== 'BUTTON') {
-      started = true;
-      window.dataLayer = window.dataLayer || [];
-      window.dataLayer.push({
-        'event': 'ce_form_event',
-        'fe_form_action': 'form_start',
-        'fe_form_id': form.id || form.name || 'contact_form',
-        'fe_page_path': window.location.pathname
-      });
-    }
-  });
+  function init() {
+    if (window.__ceFormBound) return;
+    /* 複数form対策: contactフォーム(form1)を優先。無ければ最初のform */
+    var form = document.querySelector('form[name="form1"]')
+            || document.querySelector('#mailform form, form#mailform')
+            || document.querySelector('form');
+    if (!form) return; /* まだ未描画 → 下のリトライで再入する */
+    window.__ceFormBound = true;
+    var started = false;
 
-  window.addEventListener('beforeunload', function() {
-    if (started) {
+    form.addEventListener('focusin', function(e) {
+      if (!started && e.target && e.target.tagName !== 'BUTTON') {
+        started = true;
+        window.dataLayer.push({
+          'event': 'ce_form_event',
+          'fe_form_action': 'form_start',
+          'fe_form_id': form.id || form.name || 'contact_form',
+          'fe_page_path': window.location.pathname
+        });
+      }
+    });
+
+    window.addEventListener('beforeunload', function() {
+      if (!started) return;
       var hasInput = false;
       form.querySelectorAll('input, textarea, select').forEach(function(el) {
-        if (el.value && el.value.trim() !== '') hasInput = true;
+        if (el.value && String(el.value).trim() !== '') hasInput = true;
       });
       if (hasInput) {
-        window.dataLayer = window.dataLayer || [];
         window.dataLayer.push({
           'event': 'ce_form_event',
           'fe_form_action': 'form_abandon',
@@ -225,13 +240,28 @@ BQ に `page_view` 802件 / `session_start` 414件 が来ている = **GTMコン
           'fe_page_path': window.location.pathname
         });
       }
-    }
-  });
+    });
+  }
+
+  /* GTM Page View は gtm.js 時点(DOM未構築)で発火しうる → DOM確定を待つ */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+    /* 遅延描画フォームの保険: 最大3秒 (500ms×6) リトライ */
+    var tries = 0;
+    var timer = setInterval(function() {
+      tries++;
+      if (window.__ceFormBound || tries > 6) { clearInterval(timer); return; }
+      init();
+    }, 500);
+  } else {
+    init();
+  }
 })();
 </script>
 ```
 
 トリガーは現状のまま（①② = All Pages / ③ = Contact Page - Page View）で変更不要。
+**ただし可能なら③のトリガーを「Contact Page - DOM Ready」に変更推奨**（上記DOMガードで動くが、DOM Readyトリガーなら更に確実）。
 
 ---
 
