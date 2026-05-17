@@ -90,6 +90,8 @@ BQ に `page_view` 802件 / `session_start` 414件 が来ている = **GTMコン
 <script>
 /* v2.1 hardened 2026-05-15 (/harden: dataLayerガード冒頭化 / 90%後listener解除 / null安全) */
 (function() {
+  if (window.__ceScrollBound) return;
+  window.__ceScrollBound = true;
   window.dataLayer = window.dataLayer || [];
   var milestones = [25, 50, 75, 90];
   var fired = {};

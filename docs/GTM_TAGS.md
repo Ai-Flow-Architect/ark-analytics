@@ -41,6 +41,8 @@ example.com の GA4×BQ分析基盤で計測するカスタムイベントのGTM
 <script>
 /* v2.1 hardened 2026-05-15 (/harden: dataLayerガード冒頭化 / 90%後listener解除 / null安全) */
 (function() {
+  if (window.__ceScrollBound) return;
+  window.__ceScrollBound = true;
   window.dataLayer = window.dataLayer || [];
   var milestones = [25, 50, 75, 90];
   var fired = {};
