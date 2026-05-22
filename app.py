@@ -216,7 +216,8 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
 
     if fetch_funnel:
         _q(f"""
-            SELECT report_date, step1_sessions, step2_service_view,
+            SELECT report_date, step1_sessions,
+                   step2b_service_view AS step2_service_view,
                    step3_contact_page, step4_form_start, step5_submission,
                    ROUND(overall_inquiry_cvr*100,2) AS inquiry_cvr_pct
             FROM `{project_id}.marts.conversion_funnel_daily`

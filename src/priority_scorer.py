@@ -105,12 +105,12 @@ class PriorityScorer:
         funnel_df = self.bq.query(f"""
             SELECT
                 ROUND(AVG(step1_sessions),0) AS avg_sessions,
-                ROUND(AVG(step2_service_view),0) AS avg_service_view,
+                ROUND(AVG(step2b_service_view),0) AS avg_service_view,
                 ROUND(AVG(step3_contact_page),0) AS avg_contact,
                 ROUND(AVG(step4_form_start),0) AS avg_form_start,
                 ROUND(AVG(step5_submission),0) AS avg_submit,
-                ROUND(AVG(step1_to_2_rate)*100,1) AS rate_1to2,
-                ROUND(AVG(step2_to_3_rate)*100,1) AS rate_2to3,
+                ROUND(AVG(step1_to_2b_rate)*100,1) AS rate_1to2,
+                ROUND(AVG(step2b_to_3_rate)*100,1) AS rate_2to3,
                 ROUND(AVG(step3_to_4_rate)*100,1) AS rate_3to4,
                 ROUND(AVG(step4_to_5_rate)*100,1) AS rate_4to5
             FROM `{self.project_id}.marts.conversion_funnel_daily`
