@@ -15,9 +15,16 @@ SELECT
   COUNT(DISTINCT IF(event_name = 'page_view', session_id, NULL))        AS unique_pageviews,
 
   -- 滞在・スクロール
-  ROUND(AVG(
-    IF(event_name = 'page_view', engagement_time_msec / 1000, NULL)
-  ), 1)                                                                  AS avg_time_on_page_sec,
+  -- 平均エンゲージメント時間（秒）。
+  -- 旧実装は page_view イベントの engagement_time_msec を平均していたが、GA4では
+  -- engagement_time_msec が page_view にはほぼ付与されず（user_engagement/scroll/form 等に付く）、
+  -- 結果がほぼ null/0 になっていた（2026-05-31 修正）。
+  -- → ページ上の全イベントの engagement_time_msec を合算し、ページビュー数で割ることで
+  --   「1ページビューあたりの平均エンゲージメント時間」を算出する（GA4標準の考え方）。
+  ROUND(SAFE_DIVIDE(
+    SUM(engagement_time_msec),
+    COUNTIF(event_name = 'page_view')
+  ) / 1000, 1)                                                           AS avg_time_on_page_sec,
   -- GTM タグ①: gtag('event', 'scroll_depth', {scroll_pct: 25|50|75|90})
   COUNTIF(event_name = 'scroll_depth' AND scroll_pct >= 90)       AS scroll_90pct_count,
   ROUND(SAFE_DIVIDE(

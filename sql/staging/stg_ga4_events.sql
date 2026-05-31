@@ -52,7 +52,16 @@ SELECT
 
   -- スクロール深度（GTM タグ① scroll_depth が送る event_params.key='scroll_pct'）
   -- 列名も GTM 送信パラメータ名に合わせて scroll_pct で統一
-  (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'scroll_pct') AS scroll_pct
+  (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'scroll_pct') AS scroll_pct,
+
+  -- CTAクリック詳細パラメータ（GTM タグ②: GA4イベントタグ「GA4 Event - CTA Click」が
+  -- cta_location / cta_type / cta_purpose / cta_id / cta_text として送出。docs/GTM_TAGS.md ② 参照）
+  -- ※ marts.cta_breakdown_daily（CTA別の流入・項目8）が参照する。GTM反映後に値が入る。
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_location') AS cta_location,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_type')     AS cta_type,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_purpose')  AS cta_purpose,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_id')       AS cta_id,
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_text')     AS cta_text
 
 FROM
   `__ARK_PROJECT__.analytics___ARK_GA4_PROPID__.events_*`

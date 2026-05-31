@@ -8,12 +8,9 @@
 CREATE OR REPLACE TABLE `__ARK_PROJECT__.marts.conversion_funnel_daily`
 PARTITION BY report_date
 AS
-WITH funnel_steps AS (
+WITH event_steps AS (
   SELECT
     event_date                                                             AS report_date,
-
-    -- Step1: 全セッション（サイト訪問）
-    COUNT(DISTINCT session_id)                                             AS step1_sessions,
 
     -- Step2a: 記事内CTAクリック（cta_click イベント）
     -- GTMタグ②設置後から計測。設置前は 0 になる
@@ -48,6 +45,34 @@ WITH funnel_steps AS (
 
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   GROUP BY event_date
+),
+
+-- Step1（全訪問セッション）は主要KPI（marts.daily_kpi_summary.sessions）と
+-- 完全に同一の基準に統一する（2026-05-31）。
+-- 旧実装は stg_ga4_events を event_date で数えていたため、深夜をまたぐセッションが
+-- 2日に分割計上され、主要分析のセッション数と1件前後ズレていた。
+-- daily_kpi_summary と同じく stg_sessions を session_date で数えることで差をゼロにする。
+session_base AS (
+  SELECT
+    session_date                                                           AS report_date,
+    COUNT(DISTINCT session_id)                                             AS step1_sessions
+  FROM `__ARK_PROJECT__.staging.stg_sessions`
+  GROUP BY session_date
+),
+
+funnel_steps AS (
+  SELECT
+    report_date,
+    COALESCE(sb.step1_sessions, 0)                                         AS step1_sessions,
+    COALESCE(es.step2a_cta_click, 0)                                       AS step2a_cta_click,
+    COALESCE(es.step2a_cta_click_total, 0)                                 AS step2a_cta_click_total,
+    COALESCE(es.step2b_service_view, 0)                                    AS step2b_service_view,
+    COALESCE(es.step3_contact_page, 0)                                     AS step3_contact_page,
+    COALESCE(es.step4_form_start, 0)                                       AS step4_form_start,
+    COALESCE(es.step5_submission, 0)                                       AS step5_submission,
+    COALESCE(es.step5b_download, 0)                                        AS step5b_download
+  FROM session_base sb
+  FULL OUTER JOIN event_steps es USING (report_date)
 )
 
 SELECT

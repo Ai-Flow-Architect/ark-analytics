@@ -11,12 +11,15 @@ WITH daily_sessions AS (
     COUNT(DISTINCT session_id)                                         AS sessions,
     COUNT(DISTINCT user_pseudo_id)                                     AS users,
     COUNT(DISTINCT IF(
-      -- 新規ユーザー判定（初回セッション = セッション日=最初のイベント日）
+      -- 新規ユーザー判定: その日に「初回セッション」を持つ DISTINCT ユーザー数。
+      -- 旧実装は session_id を数えていたため、新規ユーザーが同日に複数セッションを
+      -- 持つと new_users > users となり new_user_rate が 100% を超えるバグがあった。
+      -- → user_pseudo_id を数えることで new_users ≤ users を保証（2026-05-21 修正）。
       NOT EXISTS (
         SELECT 1 FROM `__ARK_PROJECT__.staging.stg_sessions` s2
         WHERE s2.user_pseudo_id = s.user_pseudo_id
           AND s2.session_date < s.session_date
-      ), session_id, NULL
+      ), user_pseudo_id, NULL
     ))                                                                 AS new_users,
     COUNTIF(is_engaged)                                                AS engaged_sessions,
     SUM(page_view_count)                                               AS pageviews,
