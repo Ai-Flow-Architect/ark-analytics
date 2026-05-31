@@ -71,8 +71,14 @@ run_sql "marts.conversion_funnel_daily"   "$SQL_DIR/marts/conversion_funnel_dail
 run_sql "marts.channel_kpi_monthly"       "$SQL_DIR/marts/channel_kpi_monthly.sql"
 run_sql "marts.page_performance"          "$SQL_DIR/marts/page_performance.sql"
 
+# marts（次フェーズ 🟢 追加: ディメンション別 流入/CV・CTA別・ページ別日次）
+run_sql "marts.traffic_breakdown_daily"   "$SQL_DIR/marts/traffic_breakdown_daily.sql"
+run_sql "marts.cta_breakdown_daily"       "$SQL_DIR/marts/cta_breakdown_daily.sql"
+run_sql "marts.page_performance_daily"    "$SQL_DIR/marts/page_performance_daily.sql"
+
 # reports（VIEW: Looker Studio接続先・definition変更を毎日反映）
 run_sql "reports.rpt_looker_main (VIEW)"  "$SQL_DIR/reports/rpt_looker_main.sql"
+run_sql "reports.rpt_funnel_overview (VIEW)" "$SQL_DIR/reports/rpt_funnel_overview.sql"
 
 echo "[$DATE] === 日次更新完了 → 鮮度チェック ===" | tee -a "$LOG"
 
