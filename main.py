@@ -178,9 +178,21 @@ def run_weekly_report(frequency: str = "weekly") -> None:
     collector = GA4DataCollector()
     kpi = collector.get_monthly_kpi(month)
 
+    # 月初フォールバック: 当月データ未着（BQ 2日遅延）の場合は前月（直近確定月）を集計対象にする。
+    # 例: 6/1 月曜 cron では 6月データが未着 → 5月累積で配信する。両月とも空の時のみ真の障害アラート。
+    if not kpi:
+        prev_year, prev_month = today.year, today.month - 1
+        if prev_month == 0:
+            prev_year, prev_month = prev_year - 1, 12
+        fallback_month = f"{prev_year:04d}-{prev_month:02d}"
+        print(f"ℹ️ {month} のデータ未着のため前月 {fallback_month} にフォールバック（月初の想定挙動）")
+        kpi = collector.get_monthly_kpi(fallback_month)
+        if kpi:
+            month = fallback_month  # メール見出し（{month}月累積）も前月表記に揃える
+
     if not kpi:
         from src.alert import notify_failure
-        reason = f"{month} の marts.daily_kpi_summary に該当データがありません（daily_refresh が走っていない可能性あり）"
+        reason = f"{month}・前月とも marts.daily_kpi_summary に該当データがありません（daily_refresh が走っていない可能性あり）"
         print(f"❌ {reason}")
         notify_failure(
             job="weekly_report",
