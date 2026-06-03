@@ -40,6 +40,25 @@ WITH event_steps AS (
     -- Step5: フォーム送信完了（contact_finish）
     COUNT(DISTINCT IF(event_name = 'contact_finish', session_id, NULL))   AS step5_submission,
 
+    -- ── 単調ファネル用 包含定義（2026-06-03 追加・主ファネル正本） ──────────
+    -- 独立カウントの step3/step4/step5 は「お問合せ到達<入力開始」等の非単調逆転や
+    -- 率100%超を生む（CTAは導線の一部のみ・/contact PV取りこぼし）。
+    -- そこでセッション単位 OR（包含）で単調性を保証する：
+    --   到達(incl) ⊇ 入力開始(incl) ⊇ 完了 を必ず満たす。
+    -- お問合せ到達(incl) = /contact|/inquiry PV または form_start または contact_finish
+    COUNT(DISTINCT IF(
+      (event_name = 'page_view' AND (page_path LIKE '%/contact%' OR page_path LIKE '%/inquiry%'))
+      OR event_name = 'form_start'
+      OR event_name = 'contact_finish',
+      session_id, NULL
+    ))                                                                     AS step3_contact_reach_incl,
+
+    -- フォーム入力開始(incl) = form_start または contact_finish（完了は必ず開始を内包）
+    COUNT(DISTINCT IF(
+      event_name IN ('form_start', 'contact_finish'),
+      session_id, NULL
+    ))                                                                     AS step4_form_start_incl,
+
     -- Step6: 資料DL（並行CVルート）
     COUNT(DISTINCT IF(event_name = 'file_download', session_id, NULL))    AS step5b_download
 
@@ -70,7 +89,9 @@ funnel_steps AS (
     COALESCE(es.step3_contact_page, 0)                                     AS step3_contact_page,
     COALESCE(es.step4_form_start, 0)                                       AS step4_form_start,
     COALESCE(es.step5_submission, 0)                                       AS step5_submission,
-    COALESCE(es.step5b_download, 0)                                        AS step5b_download
+    COALESCE(es.step5b_download, 0)                                        AS step5b_download,
+    COALESCE(es.step3_contact_reach_incl, 0)                               AS step3_contact_reach_incl,
+    COALESCE(es.step4_form_start_incl, 0)                                  AS step4_form_start_incl
   FROM session_base sb
   FULL OUTER JOIN event_steps es USING (report_date)
 )
@@ -85,6 +106,8 @@ SELECT
   step4_form_start,
   step5_submission,
   step5b_download,
+  step3_contact_reach_incl,
+  step4_form_start_incl,
 
   -- ステップ別遷移率
   -- CTA経由率: 訪問セッションのうち何%がCTAをクリックしたか
