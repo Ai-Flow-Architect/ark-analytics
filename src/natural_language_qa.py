@@ -11,7 +11,7 @@ from openai import OpenAI
 from google.cloud import bigquery
 
 
-from src._config_loader import get_project_id, load_config as _load_config
+from src._config_loader import get_project_id, load_config as _load_config, make_bq_client
 
 
 # 質問の意図からどのBQテーブルを引くかを決定する関数群
@@ -105,9 +105,10 @@ class NaturalLanguageQA:
         if key_path and os.path.exists(key_path):
             from google.oauth2 import service_account
             creds = service_account.Credentials.from_service_account_file(key_path)
-            self.bq = bigquery.Client(project=self.project_id, credentials=creds)
+            self.bq = make_bq_client(self.project_id, credentials=creds)
         else:
-            self.bq = bigquery.Client(project=self.project_id)
+            # quota project を project_id に固定（ローカルADC汚染による403を防止）
+            self.bq = make_bq_client(self.project_id)
 
         api_key = os.environ.get("ARK_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
         if not api_key:

@@ -29,7 +29,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT_DIR)
 
 from src.alert import notify_failure  # noqa: E402
-from src._config_loader import get_project_id  # noqa: E402
+from src._config_loader import get_project_id, make_bq_client  # noqa: E402
 
 
 def main() -> int:
@@ -51,7 +51,7 @@ def main() -> int:
         return 2
 
     try:
-        from google.cloud import bigquery
+        import google.cloud.bigquery  # noqa: F401
     except ImportError:
         notify_failure(
             job="data_freshness_check",
@@ -60,7 +60,8 @@ def main() -> int:
         )
         return 1
 
-    client = bigquery.Client(project=project_id)
+    # quota project を project_id に固定（ローカルADC汚染による403を防止）
+    client = make_bq_client(project_id)
     query = f"""
     SELECT MAX(report_date) AS max_date, COUNT(*) AS row_count
     FROM `{project_id}.marts.daily_kpi_summary`
