@@ -30,6 +30,11 @@ SELECT
   k.sessions,
   k.users,
   k.new_users,
+  -- リピーター（=全ユーザー − 新規ユーザー）。2026-06-08 追加:
+  --   「新規/リピーター」円グラフを new_user_rate(ユーザー単位) と同一基準にそろえ、
+  --   主要分析の新規ユーザー率と割合が一致するようにするための専用列。
+  --   円グラフは new_users : returning_users をユーザー単位で表示する。
+  GREATEST(k.users - k.new_users, 0)                  AS returning_users,
   k.engaged_sessions,
   k.pageviews,
   k.avg_session_duration,
