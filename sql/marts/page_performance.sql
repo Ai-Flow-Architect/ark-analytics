@@ -25,10 +25,11 @@ SELECT
     SUM(engagement_time_msec),
     COUNTIF(event_name = 'page_view')
   ) / 1000, 1)                                                           AS avg_time_on_page_sec,
-  -- GTM タグ①: gtag('event', 'scroll_depth', {scroll_pct: 25|50|75|90})
-  COUNTIF(event_name = 'scroll_depth' AND scroll_pct >= 90)       AS scroll_90pct_count,
+  -- スクロール90%到達。2026-06-08 修正: custom scroll_depth は深度値未送出で常に0だったため、
+  -- GA4標準 scroll イベント(percent_scrolled=90)を含めて集計する（stg側でscroll_pctにCOALESCE済）。
+  COUNTIF(event_name IN ('scroll', 'scroll_depth') AND scroll_pct >= 90)       AS scroll_90pct_count,
   ROUND(SAFE_DIVIDE(
-    COUNTIF(event_name = 'scroll_depth' AND scroll_pct >= 90),
+    COUNTIF(event_name IN ('scroll', 'scroll_depth') AND scroll_pct >= 90),
     COUNTIF(event_name = 'page_view')
   ), 4)                                                                  AS scroll_90pct_rate,
 

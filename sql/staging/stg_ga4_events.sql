@@ -50,9 +50,15 @@ SELECT
     'book_appointment'   -- 相談申込（未実装・将来追加予定）
   )                                                                                  AS is_conversion,
 
-  -- スクロール深度（GTM タグ① scroll_depth が送る event_params.key='scroll_pct'）
-  -- 列名も GTM 送信パラメータ名に合わせて scroll_pct で統一
-  (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'scroll_pct') AS scroll_pct,
+  -- スクロール深度。2026-06-08 修正:
+  --   GTM custom タグ① scroll_depth は event_params に深度値(scroll_pct)を送出できておらず
+  --   全イベントで NULL になっていた（90%到達が常に0になる不具合）。
+  --   そこで GA4 拡張計測の標準 scroll イベント（key='percent_scrolled'・90%到達時に発火）を
+  --   正の供給源とし、custom の scroll_pct があればそれを優先する COALESCE 方式に変更。
+  COALESCE(
+    (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'scroll_pct'),
+    (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'percent_scrolled')
+  )                                                                                  AS scroll_pct,
 
   -- CTAクリック詳細パラメータ（GTM タグ②: GA4イベントタグ「GA4 Event - CTA Click」が
   -- cta_location / cta_type / cta_purpose / cta_id / cta_text として送出。docs/GTM_TAGS.md ② 参照）
