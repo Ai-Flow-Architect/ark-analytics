@@ -80,3 +80,31 @@ def get_project_id(config: dict | None = None) -> str:
         "環境変数 ARK_GCP_PROJECT_ID を設定してください "
         "(GitHub Actions の場合は Secrets > ARK_GCP_PROJECT_ID)."
     )
+
+
+def make_bq_client(project_id: str, credentials=None):
+    """BigQuery クライアントを生成する単一窓口。
+
+    quota/billing プロジェクト（x-goog-user-project ヘッダ）を必ず project_id に
+    固定する。これにより、ローカルの ADC
+    （~/.config/gcloud/application_default_credentials.json）に別プロジェクトの
+    quota_project_id が残っていても、その値で BigQuery を叩いて
+    USER_PROJECT_DENIED(403) になる事故を防ぐ。
+
+    背景: ローカル開発機の gcloud/ADC は複数プロジェクト間で共有されるため、
+    他作業で set-quota-project された値を Python クライアントが意図せず継承し、
+    daily_refresh.sh のローカル実行時に鮮度チェックが 403 で誤警報を出すこと
+    があった。GitHub Actions(SA鍵) は quota 未設定で無害だが、ローカル実行に
+    対する恒久的な防御として全クライアント生成をこの窓口に統一する。
+    """
+    from google.cloud import bigquery
+
+    if credentials is None:
+        import google.auth
+
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+    if hasattr(credentials, "with_quota_project"):
+        credentials = credentials.with_quota_project(project_id)
+    return bigquery.Client(project=project_id, credentials=credentials)

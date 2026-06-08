@@ -14,7 +14,7 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 
 
-from src._config_loader import get_project_id, load_config as _load_config
+from src._config_loader import get_project_id, load_config as _load_config, make_bq_client
 
 
 class GA4DataCollector:
@@ -31,12 +31,11 @@ class GA4DataCollector:
                 key_path,
                 scopes=["https://www.googleapis.com/auth/bigquery.readonly"],
             )
-            self.client = bigquery.Client(
-                project=self.project_id, credentials=credentials
-            )
+            self.client = make_bq_client(self.project_id, credentials=credentials)
         else:
             # Application Default Credentials（ローカル開発時は gcloud auth login）
-            self.client = bigquery.Client(project=self.project_id)
+            # quota project を project_id に固定（ローカルADC汚染による403を防止）
+            self.client = make_bq_client(self.project_id)
 
     def get_monthly_kpi(self, target_month: str) -> dict[str, Any]:
         """
