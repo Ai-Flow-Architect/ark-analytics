@@ -34,13 +34,25 @@ WITH daily_sessions AS (
 daily_events AS (
   SELECT
     event_date                                                         AS report_date,
-    COUNTIF(event_name = 'contact_finish')                             AS contact_form_submissions,
+    -- 完了はセッション単位（同一セッションの重複completeを1とカウント）
+    COUNT(DISTINCT IF(event_name = 'contact_finish', session_id, NULL)) AS contact_form_submissions,
     COUNTIF(event_name = 'file_download')                             AS document_downloads,
     COUNTIF(event_name = 'book_appointment')                          AS appointment_bookings,
-    COUNTIF(event_name = 'page_view'
-      AND page_path LIKE '%/contact%')                                AS contact_form_views,
-    -- GTM タグ①: gtag('event','scroll_depth',{scroll_pct: 25|50|75|90})
-    COUNTIF(event_name = 'scroll_depth'
+    -- フォーム閲覧（=お問合せ到達）。2026-06-08 修正:
+    --   旧実装は /contact の「延べページビュー数」(COUNTIF) を分母にしており、
+    --   分子(完了=セッション単位)と粒度が不一致 → contact_form_cr が実態の約半分(19%)に
+    --   見える不具合があった（同一セッションが /contact を平均2.3回閲覧して分母が膨張）。
+    --   ファネルの step3_contact_reach_incl と同一の「お問合せ到達セッション数（包含）」に統一し、
+    --   主要分析・ファネル・総合ビューで『到達→完了率』が単一値に一致するようにする。
+    COUNT(DISTINCT IF(
+      (event_name = 'page_view' AND (page_path LIKE '%/contact%' OR page_path LIKE '%/inquiry%'))
+      OR event_name = 'form_start'
+      OR event_name = 'contact_finish',
+      session_id, NULL
+    ))                                                                 AS contact_form_views,
+    -- スクロール90%到達。2026-06-08 修正: custom scroll_depth は深度値未送出のため
+    -- GA4標準 scroll(percent_scrolled=90)を含めて集計（stg側でscroll_pctにCOALESCE済）。
+    COUNTIF(event_name IN ('scroll', 'scroll_depth')
       AND scroll_pct >= 90)                                      AS scroll_90pct_count,
     COUNT(DISTINCT IF(is_conversion, session_id, NULL))               AS total_conversions
 
