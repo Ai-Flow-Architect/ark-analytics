@@ -32,13 +32,18 @@ GTM_EVENT_NAMES = {
 }
 
 # 旧バグ由来の禁止イベント名（SQL に残ってはいけない）
+# 2026-06-08 更新: 'scroll' を禁止から解除。
+#   実データ監査で custom `scroll_depth`(560件) は深度パラメータを一切送出しておらず、
+#   GA4標準 `scroll`(percent_scrolled=90・87件) が唯一の正しい90%到達供給源と判明したため、
+#   native `scroll` を集計対象に含める設計に変更（5/13 の scroll_depth 単独前提は誤りだった）。
 FORBIDDEN_EVENT_NAMES = {
-    "scroll",   # 正: scroll_depth
     "click",    # 正: cta_click（汎用 click は使わない）
 }
 
-# GTM タグ① のスクロール深度パラメータ名（gtag('event','scroll_depth',{scroll_pct:m})）
+# スクロール深度パラメータ名。custom scroll_depth は `scroll_pct`、
+# GA4標準 scroll は `percent_scrolled` を送る。staging は両方を COALESCE で受ける。
 GTM_SCROLL_PARAM = "scroll_pct"
+GA4_NATIVE_SCROLL_PARAM = "percent_scrolled"
 
 SQL_DIRS = [
     os.path.join(ROOT, "sql", "staging"),
@@ -87,10 +92,13 @@ def test_no_forbidden_event_name(forbidden: str):
 
 
 def test_scroll_param_name_matches_gtm():
-    """staging が GTM タグ① のパラメータ名 `scroll_pct` を読んでいる。
+    """staging が custom/native 両方のスクロール深度パラメータを読んでいる。
 
-    旧バグ: staging が `percent_scrolled` を読み、GTM が `scroll_pct` を送っており
-    永続的に NULL になっていた。
+    2026-06-08 改定: 実データ監査で
+      - custom `scroll_depth` は深度パラメータ(scroll_pct)を送出できておらず常に NULL
+      - GA4標準 `scroll` が `percent_scrolled=90` を正送信
+    と判明したため、staging は `scroll_pct`（custom優先）と `percent_scrolled`（native）の
+    両方を COALESCE で受ける設計に変更した。両 key を読んでいることを保証する。
     """
     path = os.path.join(ROOT, "sql", "staging", "stg_ga4_events.sql")
     with open(path, "r", encoding="utf-8") as f:
@@ -98,38 +106,39 @@ def test_scroll_param_name_matches_gtm():
     # event_params の key 参照箇所を抽出
     keys = set(re.findall(r"key\s*=\s*'([^']+)'", sql))
     assert GTM_SCROLL_PARAM in keys, (
-        f"stg_ga4_events.sql が GTM スクロール深度パラメータ '{GTM_SCROLL_PARAM}' を "
+        f"stg_ga4_events.sql が custom スクロール深度パラメータ '{GTM_SCROLL_PARAM}' を "
         f"読み取っていません。検出した key: {sorted(keys)}"
     )
-    assert "percent_scrolled" not in keys, (
-        "stg_ga4_events.sql に旧 key 'percent_scrolled' が残っています。"
-        " GTM 送信パラメータは 'scroll_pct' です。"
+    assert GA4_NATIVE_SCROLL_PARAM in keys, (
+        f"stg_ga4_events.sql が GA4標準 scroll の '{GA4_NATIVE_SCROLL_PARAM}' を "
+        f"読み取っていません（90%到達の唯一の実供給源）。検出した key: {sorted(keys)}"
     )
 
 
 def test_scroll_pct_column_name_is_unified():
-    """scroll_pct の列名がパイプライン全体で統一されている（命名負債解消）。
+    """下流に渡る列名は `scroll_pct` に統一されている（命名負債解消）。
 
     旧バグ: stg_ga4_events で `scroll_pct AS percent_scrolled` と AS で偽装し、
     下流SQLが `percent_scrolled` を参照する命名不一致を放置していた。
+
+    2026-06-08 改定: `percent_scrolled` は GA4標準 scroll の event_param key として
+    `key = 'percent_scrolled'` の形で読み取るのは正当（native供給源）。
+    禁止するのは列エイリアス `AS percent_scrolled`（命名偽装）のみに限定する。
     """
     sql_files = _read_sql_files()
     offenders: list[tuple[str, int]] = []
     for rel, sql in sql_files.items():
-        # CRM風コメントや日本語注釈中の "percent_scrolled" は無視するため
-        # SQL token としての出現のみカウント
         for i, line in enumerate(sql.splitlines(), 1):
-            # コメント行は除外
             stripped = line.strip()
             if stripped.startswith("--") or stripped.startswith("/*"):
                 continue
-            # コメント前のSQL部分のみ判定
             sql_part = line.split("--", 1)[0]
-            if re.search(r"\bpercent_scrolled\b", sql_part):
+            # 列エイリアスとしての percent_scrolled のみ禁止（param key 読み取りは許可）
+            if re.search(r"\bAS\s+percent_scrolled\b", sql_part, re.IGNORECASE):
                 offenders.append((rel, i))
     assert not offenders, (
-        f"旧列名 'percent_scrolled' が SQL に残っています: {offenders}. "
-        f"`scroll_pct` に統一してください（GTM 送信パラメータ名と一致）。"
+        f"列エイリアス 'AS percent_scrolled' が SQL に残っています: {offenders}. "
+        f"下流に渡す列名は `scroll_pct` に統一してください。"
     )
 
 

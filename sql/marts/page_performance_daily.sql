@@ -25,13 +25,13 @@ SELECT
   ), 1)                                                                 AS avg_time_on_page_sec,
 
   -- ── スクロール（実数 + 率） ────────────────────────────────
-  COUNTIF(event_name = 'scroll_depth' AND scroll_pct >= 90)            AS scroll_90pct_count,
+  COUNTIF(event_name IN ('scroll', 'scroll_depth') AND scroll_pct >= 90)            AS scroll_90pct_count,
   ROUND(SAFE_DIVIDE(
-    COUNTIF(event_name = 'scroll_depth' AND scroll_pct >= 90),
+    COUNTIF(event_name IN ('scroll', 'scroll_depth') AND scroll_pct >= 90),
     COUNTIF(event_name = 'page_view')
   ), 4)                                                                 AS scroll_90pct_rate,
   ROUND(SAFE_DIVIDE(
-    COUNTIF(event_name = 'scroll_depth' AND scroll_pct >= 90),
+    COUNTIF(event_name IN ('scroll', 'scroll_depth') AND scroll_pct >= 90),
     COUNTIF(event_name = 'page_view')
   ) * 100, 2)                                                           AS scroll_90pct_rate_pct,
 
