@@ -180,6 +180,16 @@ def test_chat_app_funnel_uses_inclusive_columns():
         assert needle in app, f"app.py のファネルクエリに {needle} が使われていません"
 
 
+def test_chat_app_resolves_project_id_from_sa_secret():
+    """Streamlit Cloud Secrets に ARK_GCP_PROJECT_ID が無くても、
+    gcp_service_account 内の project_id から解決できる（2026-06-11 本番起動不能の再発防止）。"""
+    app = _read(os.path.join(ROOT, "app.py"))
+    assert 'st.secrets["gcp_service_account"]).get("project_id"' in app, (
+        "app.py に SAキーからの project_id フォールバックがありません"
+        "（Secrets未設定環境で起動不能になります）"
+    )
+
+
 def test_daily_refresh_order_marts_before_funnel_report():
     """rpt_funnel_overview は conversion_funnel_daily の後に実行される（依存順）。"""
     sh = _read(REFRESH)
