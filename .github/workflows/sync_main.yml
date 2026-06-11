@@ -1,0 +1,22 @@
+# master → main 自動ミラー
+# 背景（2026-06-11）: 本番Streamlitのデプロイブランチは main。
+# 旧ドキュメントの「masterデプロイ」誤記により 5/22〜6/11 のmaster修正が
+# 本番未反映となる事故が発生。masterへのpushを常にmainへ即時反映して再発を防ぐ。
+name: sync_main
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push master to main (fast-forward expected)
+        run: git push origin HEAD:main

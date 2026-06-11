@@ -339,8 +339,12 @@ APIによる自動化は現時点で非対応。
 
 **Streamlit デプロイについて:**
 
-GitHub `Ai-Flow-Architect/ark-analytics` の `master` ブランチにpushすると自動デプロイ。
-デプロイ確認はフッターのバージョン番号（`v2.2`）で確認。
+GitHub `Ai-Flow-Architect/ark-analytics` の **`main` ブランチ**にpushすると自動デプロイ
+（⚠️2026-06-11訂正: 旧記載「master」は誤り。本番UIマーカー突合で main と実証。
+この誤記が原因で 5/22〜6/11 のmaster修正が本番未反映だった）。
+masterへのpush時は `.github/workflows/sync_main.yml` が自動で main へミラーする。
+デプロイ確認はフッターのバージョン番号で行い、**リリースごとに必ずバンプする**
+（バンプしないとフッター確認が非弁別的になり、反映漏れを検知できない）。現行 `v2.3`。
 
 **BQビューの再作成が必要になった場合:**
 

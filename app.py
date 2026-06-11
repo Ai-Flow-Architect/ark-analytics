@@ -476,7 +476,7 @@ if question:
 st.markdown("---")
 st.markdown(
     "<p style='text-align:center;font-size:12px;color:#94a3b8;'>"
-    "ARK Analytics | GA4 × BigQuery × AI 分析基盤 | Powered by GPT-4o | v2.2"
+    "ARK Analytics | GA4 × BigQuery × AI 分析基盤 | Powered by GPT-4o | v2.3"
     "</p>",
     unsafe_allow_html=True,
 )
