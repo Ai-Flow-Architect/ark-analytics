@@ -119,6 +119,58 @@ def main() -> int:
 
     delay_days = (today - max_date).days
     print(f"[freshness] OK max_date={max_date} delay={delay_days}d source={args.source}")
+
+    # ── 欠落日（中抜け）検知 ─────────────────────────────────────
+    # MAX(report_date) 監視は「単日だけ欠ける」事象（例: 2026-06-01 の
+    # GA4→BQ Export 単日未生成）を原理的に検知できないため、
+    # 直近14日窓の歯抜けを別途検査する（末尾 threshold 日は正常ラグとして除外）。
+    gap_rc = _check_date_gaps(client, project_id, today, args)
+    if gap_rc != 0:
+        return gap_rc
+    return 0
+
+
+# Google側で確認済みの既知欠落日（再通知しない）
+KNOWN_GAPS = {"2026-06-01"}
+
+
+def _check_date_gaps(client, project_id: str, today: date, args) -> int:
+    gap_query = f"""
+    SELECT FORMAT_DATE('%Y-%m-%d', d) AS missing_date
+    FROM UNNEST(GENERATE_DATE_ARRAY(
+        DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 14 DAY),
+        DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL {args.threshold_days + 1} DAY)
+    )) AS d
+    LEFT JOIN (
+        SELECT DISTINCT report_date FROM `{project_id}.marts.daily_kpi_summary`
+    ) t ON t.report_date = d
+    WHERE t.report_date IS NULL
+    ORDER BY d
+    """
+    try:
+        gap_df = client.query(gap_query).to_dataframe()
+    except Exception as e:
+        notify_failure(
+            job="data_freshness_check",
+            reason=f"欠落日検査クエリ失敗: {e}",
+            context={"source": args.source, "project": project_id},
+        )
+        return 1
+
+    gaps = [g for g in gap_df["missing_date"].tolist() if g not in KNOWN_GAPS]
+    if gaps:
+        notify_failure(
+            job="data_freshness_check",
+            reason=(
+                f"daily_kpi_summary に欠落日（中抜け）を検出: {', '.join(gaps)}。"
+                f"GA4→BigQuery Export の単日未生成が疑われます"
+                f"（GA4本体にデータがあるかは GA4 Data API/管理画面で確認）。"
+            ),
+            context={"source": args.source, "missing_dates": ", ".join(gaps)},
+        )
+        return 1
+
+    print(f"[freshness] gap-check OK (known gaps excluded: {sorted(KNOWN_GAPS)})")
     return 0
 
 
