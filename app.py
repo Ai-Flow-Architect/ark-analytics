@@ -66,6 +66,19 @@ COLUMN_JA = {
     "step4_form_start":         "Step4: フォーム入力開始",
     "step5_submission":         "Step5: フォーム送信完了",
     "inquiry_cvr_pct":          "問い合わせCVR(%)",
+    "dimension_type":           "分類軸",
+    "dimension_value":          "内訳",
+}
+
+# 流入・ページ内訳の分類軸 日本語ラベル
+DIMENSION_TYPE_JA = {
+    "channel":       "チャネル",
+    "search_engine": "検索エンジン",
+    "referral":      "参照元サイト",
+    "landing_page":  "ランディングページ",
+    "exit_page":     "離脱ページ",
+    "device":        "デバイス",
+    "user_type":     "新規/リピーター",
 }
 
 
@@ -171,19 +184,28 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
     fetch_channel = any(k in q for k in ["チャネル", "流入", "経路", "organic", "direct", "検索"])
     fetch_funnel  = any(k in q for k in ["ファネル", "フォーム", "問い合わせ", "cv", "コンバージョン", "送信"])
     fetch_kpi     = any(k in q for k in ["セッション", "訪問", "ユーザー", "kpi", "今月", "先月", "傾向", "エンゲージ"])
-    if not any([fetch_page, fetch_channel, fetch_funnel, fetch_kpi]):
+    fetch_traffic = any(k in q for k in [
+        "検索エンジン", "google", "yahoo", "bing", "リファラ", "referral", "参照",
+        "流入元", "ランディング", "離脱", "デバイス", "スマホ", "モバイル", "新規", "リピー",
+    ])
+    if not any([fetch_page, fetch_channel, fetch_funnel, fetch_kpi, fetch_traffic]):
         fetch_kpi = True
 
     results: dict[str, pd.DataFrame] = {}
 
     def _q(sql: str, label: str) -> None:
-        try:
-            job = bq.query(sql)
-            df = job.result(timeout=30).to_dataframe()
-            if not df.empty:
-                results[label] = df
-        except Exception as e:
-            st.warning(f"⚠️ {label} の取得に失敗しました: {e}")
+        # BQコールドスタート等の一過性エラーに備えて1回だけ自動リトライ
+        last_err: Exception | None = None
+        for attempt in range(2):
+            try:
+                job = bq.query(sql)
+                df = job.result(timeout=30).to_dataframe()
+                if not df.empty:
+                    results[label] = df
+                return
+            except Exception as e:
+                last_err = e
+        st.warning(f"⚠️ {label} の取得に失敗しました（再試行済み）: {last_err}")
 
     if fetch_kpi:
         _q(f"""
@@ -218,11 +240,34 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
         _q(f"""
             SELECT report_date, step1_sessions,
                    step2b_service_view AS step2_service_view,
-                   step3_contact_page, step4_form_start, step5_submission,
+                   step3_contact_reach_incl AS step3_contact_page,
+                   step4_form_start_incl AS step4_form_start,
+                   step5_submission,
                    ROUND(overall_inquiry_cvr*100,2) AS inquiry_cvr_pct
             FROM `{project_id}.marts.conversion_funnel_daily`
             ORDER BY report_date DESC LIMIT 14
         """, "ファネル（直近14日）")
+
+    if fetch_traffic:
+        _q(f"""
+            SELECT dimension_type, dimension_value,
+                   SUM(sessions) AS sessions,
+                   SUM(conversions) AS conversions,
+                   ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,1) AS eng_rate_pct
+            FROM `{project_id}.marts.traffic_breakdown_daily`
+            WHERE report_date >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 30 DAY)
+              AND dimension_type IN ('channel','search_engine','referral',
+                                     'landing_page','exit_page','device','user_type')
+            GROUP BY dimension_type, dimension_value
+            HAVING sessions > 0
+            ORDER BY dimension_type, sessions DESC
+        """, "流入・ページ内訳（直近30日: チャネル/検索エンジン/Referral/LP/離脱/デバイス/新規リピーター）")
+        label_tr = "流入・ページ内訳（直近30日: チャネル/検索エンジン/Referral/LP/離脱/デバイス/新規リピーター）"
+        if label_tr in results:
+            results[label_tr]["dimension_type"] = (
+                results[label_tr]["dimension_type"].map(DIMENSION_TYPE_JA)
+                .fillna(results[label_tr]["dimension_type"])
+            )
 
     return results
 
@@ -305,6 +350,12 @@ def _ask_ai(
         "- 改善提案がある場合は必ず1つ以上含める\n"
         "- データにない推測・誇張はしない\n"
         "- 回答は500文字以内\n"
+        "\n【利用可能なデータ範囲】\n"
+        "- 日次KPI・ファネル: 直近14日 ／ ページ別: 全期間 ／ チャネル別: 月次\n"
+        "- 流入・ページ内訳（チャネル/検索エンジン/参照元/LP/離脱ページ/デバイス/新規リピーター）: 直近30日\n"
+        "- GA4→BigQueryの日次連携のため、直近1〜2日のデータは未反映\n"
+        "- 範囲外・データにない質問には「現在のデータでは回答できない」と明示し、"
+        "代わりに確認できる内容を案内する\n"
         f"\n【最新BQデータ】\n{context}"
     )
 
@@ -352,6 +403,8 @@ BigQueryに蓄積されたGA4データをもとに、
 - ページ別パフォーマンス
 - チャネル別月次KPI
 - コンバージョンファネル
+- 検索エンジン別・参照元別の流入
+- ランディング/離脱ページ・デバイス・新規/リピーター
 """)
 
 

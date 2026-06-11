@@ -7,6 +7,8 @@
 --   (9)  LP別の流入                            dimension_type = 'landing_page'
 --   (10) Referral別の流入                      dimension_type = 'referral'
 --   (15) 新規／リピーターの流入数・率          dimension_type = 'user_type'
+--   (16) 離脱ページ別セッション                dimension_type = 'exit_page'
+--        （セッション最後の page_view のパス。2026-06-11 検収⑦対応で追加）
 -- (3) 全ページ全期間/期間指定: report_date 日次grain のため Looker レポートレベルの
 --     期間コントロール1つで全ディメンションページが同一期間に同期する。
 -- 更新: 毎日 AM 5:00（staging.stg_sessions 完了後）
@@ -77,16 +79,22 @@ sess AS (
     COALESCE(
       NULLIF(REGEXP_EXTRACT(s.landing_page, r'https?://[^/]+([^?#]*)'), ''),
       '(not set)'
-    )                                                 AS landing_path
+    )                                                 AS landing_path,
+
+    -- (16) 離脱ページ（セッション最後の page_view。landing と同じパス正規化）
+    COALESCE(
+      NULLIF(REGEXP_EXTRACT(s.exit_page, r'https?://[^/]+([^?#]*)'), ''),
+      '(not set)'
+    )                                                 AS exit_path
 
   FROM `__ARK_PROJECT__.staging.stg_sessions` s
   JOIN user_first uf USING (user_pseudo_id)
 ),
 
 exploded AS (
-  -- stg_sessions を1回だけスキャンし、6ディメンションを配列UNNESTで縦持ち化する。
-  -- （UNION ALL 6本だと sess=stg_sessions を6回スキャンするため、配列展開で単一スキャンに最適化）
-  --   (6)device / (5)channel / (7)search_engine / (9)landing_page / (10)referral / (15)user_type
+  -- stg_sessions を1回だけスキャンし、7ディメンションを配列UNNESTで縦持ち化する。
+  -- （UNION ALL 7本だと sess=stg_sessions を7回スキャンするため、配列展開で単一スキャンに最適化）
+  --   (6)device / (5)channel / (7)search_engine / (9)landing_page / (10)referral / (15)user_type / (16)exit_page
   SELECT
     report_date,
     dim.dimension_type,
@@ -100,7 +108,8 @@ exploded AS (
     STRUCT('landing_page'  AS dimension_type, landing_path                          AS dimension_value),
     STRUCT('referral'      AS dimension_type,
            IF(channel_grouping = 'Referral', COALESCE(NULLIF(source, ''), '(not set)'), NULL) AS dimension_value),
-    STRUCT('user_type'     AS dimension_type, IF(is_new_user_session, '新規', 'リピーター')   AS dimension_value)
+    STRUCT('user_type'     AS dimension_type, IF(is_new_user_session, '新規', 'リピーター')   AS dimension_value),
+    STRUCT('exit_page'     AS dimension_type, exit_path                             AS dimension_value)
   ]) AS dim
   -- search_engine は Organic/Paid Search のみ・referral は Referral チャネルのみ（それ以外は NULL）
   -- → 元の UNION ALL 各 WHERE と等価。NULL を落とすことで部分集合ディメンションを再現する。
