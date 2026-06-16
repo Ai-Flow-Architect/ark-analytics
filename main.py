@@ -204,7 +204,15 @@ def run_weekly_report(frequency: str = "weekly") -> None:
     sessions = int(kpi.get("sessions", 0))
     inquiries = int(kpi.get("inquiries", 0))
     downloads = int(kpi.get("downloads", 0))
-    cvr = round(float(kpi.get("contact_cr", 0)) * 100, 2)
+    # CVR=全体CVR(overall_cvr=(問合せ+資料DL)/全セッション)。
+    # 旧実装は contact_cr(=お問合せ到達→完了率)を表示しており「(問合せ+DL)/全セッション」というクライアント期待と別指標だった。
+    cvr = round(float(kpi.get("overall_cvr", 0) or 0) * 100, 2)
+
+    # 実集計期間（月初〜送信日ではなく、データが実在する MIN/MAX report_date）。
+    # GA4→BigQueryの確定エクスポートが1〜2日遅延するため、送信日より手前までになる。
+    period_start = kpi.get("period_start")
+    period_end = kpi.get("period_end")
+    period_label = f"{period_start}〜{period_end}" if period_start and period_end else month
 
     # メール配信（KPIサマリー形式）
     delivery = ReportDelivery()
@@ -213,6 +221,10 @@ def run_weekly_report(frequency: str = "weekly") -> None:
 <h2 style="color:#1e293b;border-bottom:2px solid #4a6cf7;padding-bottom:8px;">
   週次KPIレポート｜{week_label}（{month}月累積）
 </h2>
+<p style="color:#475569;font-size:13px;margin:4px 0 12px;">
+  集計期間：{period_label}
+  <span style="color:#94a3b8;font-size:12px;">（GA4→BigQueryの確定反映の都合で、送信日の1〜2日前まで）</span>
+</p>
 <table style="width:100%;border-collapse:collapse;margin:16px 0;">
   <tr style="background:#f8faff;">
     <td style="padding:10px 14px;border:1px solid #e2e8f0;font-weight:700;">セッション数</td>
