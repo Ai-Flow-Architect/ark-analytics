@@ -49,10 +49,17 @@ COLUMN_JA = {
     "report_month":             "月",
     "sessions":                 "セッション数",
     "users":                    "ユーザー数",
+    "new_users":                "新規ユーザー数",
+    "engaged_sessions":         "エンゲージドセッション数",
     "pageviews":                "ページビュー数",
     "engagement_rate_pct":      "エンゲージメント率(%)",
+    "new_user_rate_pct":        "新規ユーザー率(%)",
+    "bounce_rate_pct":          "直帰率(%)",
     "contact_form_submissions": "問い合わせ件数",
     "overall_cvr_pct":          "コンバージョン率(%)",
+    "period_start":             "期間開始",
+    "period_end":               "期間終了",
+    "inquiries":                "問い合わせ件数",
     "page_path":                "ページパス",
     "avg_time_sec":             "平均滞在時間(秒)",
     "scroll_90pct_pct":         "スクロール90%到達率(%)",
@@ -230,18 +237,18 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
         # 読み違える事故を防止。率は必ずratio of sumsでLooker値と一致させる）。
         _q(f"""
             SELECT
-              MIN(report_date) AS `期間開始`, MAX(report_date) AS `期間終了`,
-              SUM(sessions) AS `セッション数`, SUM(users) AS `ユーザー数`,
-              ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,2)        AS `エンゲージメント率_pct`,
-              ROUND((1 - SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions)))*100,2)  AS `直帰率_pct`,
-              ROUND(SAFE_DIVIDE(SUM(new_users), SUM(users))*100,2)                  AS `新規ユーザー率_pct`,
-              SUM(contact_form_submissions) AS `問合せ数`,
-              ROUND(SAFE_DIVIDE(SUM(contact_form_submissions)+SUM(document_downloads), SUM(sessions))*100,2) AS `全体CVR_pct`
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(sessions) AS sessions, SUM(users) AS users,
+              ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,2)        AS engagement_rate_pct,
+              ROUND((1 - SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions)))*100,2)  AS bounce_rate_pct,
+              ROUND(SAFE_DIVIDE(SUM(new_users), SUM(users))*100,2)                  AS new_user_rate_pct,
+              SUM(contact_form_submissions) AS inquiries,
+              ROUND(SAFE_DIVIDE(SUM(contact_form_submissions)+SUM(document_downloads), SUM(sessions))*100,2) AS overall_cvr_pct
             FROM (
               SELECT * FROM `{project_id}.marts.daily_kpi_summary`
               ORDER BY report_date DESC LIMIT 14
             )
-        """, "直近14日 期間集計（確定値・率はこの値をそのまま使う）")
+        """, "直近14日 期間集計（確定値）")
 
     if fetch_page:
         _q(f"""
@@ -377,7 +384,7 @@ def _ask_ai(
         "- データにない推測・誇張はしない\n"
         "- 回答は500文字以内\n"
         "\n【率の期間集計ルール（重要）】\n"
-        "- 直近14日の期間の数値を聞かれたら、まず『直近14日 期間集計（確定値…）』の行をそのまま引用する。\n"
+        "- 直近14日の期間の数値を聞かれたら、まず『直近14日 期間集計（確定値）』の行の値をそのまま引用する。\n"
         "  日次行を自分で足し算して率を出し直さない（合算ミスの原因になる）。\n"
         "- 上記の確定値が無い範囲を集計するときのみ、率は日次％の単純平均ではなく\n"
         "  必ず分子と分母を合計してから割る(ratio of sums)。例: SUM(engaged_sessions)÷SUM(sessions)。\n"
