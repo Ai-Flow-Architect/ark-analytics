@@ -226,6 +226,22 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
             FROM `{project_id}.marts.daily_kpi_summary`
             ORDER BY report_date DESC LIMIT 14
         """, "日次KPI（直近14日）")
+        # 直近14日の期間集計をSQL側で確定値として渡す（AIが14行を自力合算して
+        # 読み違える事故を防止。率は必ずratio of sumsでLooker値と一致させる）。
+        _q(f"""
+            SELECT
+              MIN(report_date) AS `期間開始`, MAX(report_date) AS `期間終了`,
+              SUM(sessions) AS `セッション数`, SUM(users) AS `ユーザー数`,
+              ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,2)        AS `エンゲージメント率_pct`,
+              ROUND((1 - SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions)))*100,2)  AS `直帰率_pct`,
+              ROUND(SAFE_DIVIDE(SUM(new_users), SUM(users))*100,2)                  AS `新規ユーザー率_pct`,
+              SUM(contact_form_submissions) AS `問合せ数`,
+              ROUND(SAFE_DIVIDE(SUM(contact_form_submissions)+SUM(document_downloads), SUM(sessions))*100,2) AS `全体CVR_pct`
+            FROM (
+              SELECT * FROM `{project_id}.marts.daily_kpi_summary`
+              ORDER BY report_date DESC LIMIT 14
+            )
+        """, "直近14日 期間集計（確定値・率はこの値をそのまま使う）")
 
     if fetch_page:
         _q(f"""
@@ -361,10 +377,11 @@ def _ask_ai(
         "- データにない推測・誇張はしない\n"
         "- 回答は500文字以内\n"
         "\n【率の期間集計ルール（重要）】\n"
-        "- エンゲージメント率・新規ユーザー率・直帰率など『率』を複数日でまとめて答えるときは、\n"
-        "  日次の％を単純平均してはいけない。必ず分子と分母を合計してから割る(ratio of sums)。\n"
-        "  例: 期間のエンゲージメント率 = SUM(engaged_sessions) ÷ SUM(sessions)。\n"
-        "  新規ユーザー率 = SUM(new_users) ÷ SUM(users)。これがLooker Studioの数値と一致する正しい集計。\n"
+        "- 直近14日の期間の数値を聞かれたら、まず『直近14日 期間集計（確定値…）』の行をそのまま引用する。\n"
+        "  日次行を自分で足し算して率を出し直さない（合算ミスの原因になる）。\n"
+        "- 上記の確定値が無い範囲を集計するときのみ、率は日次％の単純平均ではなく\n"
+        "  必ず分子と分母を合計してから割る(ratio of sums)。例: SUM(engaged_sessions)÷SUM(sessions)。\n"
+        "  これがLooker Studioの数値と一致する正しい集計。\n"
         "\n【利用可能なデータ範囲】\n"
         "- 日次KPI・ファネル: 直近14日 ／ ページ別: 全期間 ／ チャネル別: 月次\n"
         "- 日次KPIには 直帰率(bounce_rate_pct)・新規ユーザー率(new_user_rate_pct)・エンゲージメント率も含む\n"
