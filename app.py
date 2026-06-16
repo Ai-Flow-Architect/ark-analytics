@@ -214,9 +214,13 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
         st.warning(f"⚠️ {label} の取得に失敗しました（再試行済み）: {last_err}")
 
     if fetch_kpi:
+        # engaged_sessions/new_users の生値も渡し、期間集計時は率を単純平均せず
+        # SUM(分子)/SUM(分母)(=ratio of sums) で計算させる（Looker側の真値定義に一致）。
         _q(f"""
-            SELECT report_date, sessions, users, pageviews,
+            SELECT report_date, sessions, users, new_users, engaged_sessions, pageviews,
                    ROUND(engagement_rate*100,1) AS engagement_rate_pct,
+                   ROUND(new_user_rate*100,1) AS new_user_rate_pct,
+                   ROUND(bounce_rate*100,1) AS bounce_rate_pct,
                    contact_form_submissions,
                    ROUND(overall_cvr*100,2) AS overall_cvr_pct
             FROM `{project_id}.marts.daily_kpi_summary`
@@ -356,10 +360,18 @@ def _ask_ai(
         "- 改善提案がある場合は必ず1つ以上含める\n"
         "- データにない推測・誇張はしない\n"
         "- 回答は500文字以内\n"
+        "\n【率の期間集計ルール（重要）】\n"
+        "- エンゲージメント率・新規ユーザー率・直帰率など『率』を複数日でまとめて答えるときは、\n"
+        "  日次の％を単純平均してはいけない。必ず分子と分母を合計してから割る(ratio of sums)。\n"
+        "  例: 期間のエンゲージメント率 = SUM(engaged_sessions) ÷ SUM(sessions)。\n"
+        "  新規ユーザー率 = SUM(new_users) ÷ SUM(users)。これがLooker Studioの数値と一致する正しい集計。\n"
         "\n【利用可能なデータ範囲】\n"
         "- 日次KPI・ファネル: 直近14日 ／ ページ別: 全期間 ／ チャネル別: 月次\n"
+        "- 日次KPIには 直帰率(bounce_rate_pct)・新規ユーザー率(new_user_rate_pct)・エンゲージメント率も含む\n"
         "- 流入・ページ内訳（チャネル/検索エンジン/参照元/LP/離脱ページ/デバイス/新規リピーター）: 直近30日\n"
         "- GA4→BigQueryの日次連携のため、直近1〜2日のデータは未反映\n"
+        "- 渡されたデータは固定範囲(14日/30日/月次)の集計。これより前にさかのぼる任意期間の再集計はこのチャットでは不可。\n"
+        "  その場合は『この期間の自由指定集計は現在のAIチャットでは未対応で、Looker Studioで任意期間を指定してご確認いただけます』と案内する\n"
         "- 範囲外・データにない質問には「現在のデータでは回答できない」と明示し、"
         "代わりに確認できる内容を案内する\n"
         f"\n【最新BQデータ】\n{context}"

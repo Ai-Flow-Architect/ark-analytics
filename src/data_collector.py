@@ -42,21 +42,30 @@ class GA4DataCollector:
         月次KPI集計を返す
         target_month: '2026-04' 形式
         """
+        # 率指標は日次率の単純平均(AVG)ではなく期間加重比(SUM分子/SUM分母=ratio of sums)で算出する。
+        # AVGだと少セッション日の率が過大評価され期間比から乖離する（CVR/エンゲージメント率の水増しバグの真因）。
+        # period_start/period_end は「月初〜送信日」ではなく実際にデータが存在する集計範囲(MIN/MAX report_date)。
         query = f"""
         SELECT
-          FORMAT_DATE('%Y-%m', report_date)         AS month,
+          FORMAT_DATE('%Y-%m', MIN(report_date))    AS month,
+          MIN(report_date)                          AS period_start,
+          MAX(report_date)                          AS period_end,
           SUM(sessions)                             AS sessions,
+          SUM(users)                                AS users,
           SUM(new_users)                            AS new_users,
-          ROUND(AVG(engagement_rate), 4)            AS engagement_rate,
+          SUM(engaged_sessions)                     AS engaged_sessions,
+          ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions)), 4)         AS engagement_rate,
+          ROUND(SAFE_DIVIDE(SUM(new_users), NULLIF(SUM(users), 0)), 4)        AS new_user_rate,
+          SUM(contact_form_views)                   AS contact_form_views,
           SUM(contact_form_submissions)             AS inquiries,
           SUM(document_downloads)                   AS downloads,
           SUM(appointment_bookings)                 AS appointments,
           SUM(total_conversions)                    AS total_conversions,
-          ROUND(AVG(contact_form_cr), 4)            AS contact_cr,
-          ROUND(AVG(overall_cvr), 4)                AS overall_cvr
+          ROUND(SAFE_DIVIDE(SUM(contact_form_submissions), NULLIF(SUM(contact_form_views), 0)), 4)  AS contact_cr,
+          ROUND(SAFE_DIVIDE(SUM(contact_form_submissions) + SUM(document_downloads), NULLIF(SUM(sessions), 0)), 4)  AS overall_cvr
         FROM `{self.project_id}.marts.daily_kpi_summary`
         WHERE FORMAT_DATE('%Y-%m', report_date) = @target_month
-        GROUP BY 1
+        HAVING COUNT(*) > 0
         """
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
