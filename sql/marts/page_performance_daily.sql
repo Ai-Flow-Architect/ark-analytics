@@ -20,9 +20,17 @@ SELECT
   COUNT(DISTINCT IF(event_name = 'page_view', user_pseudo_id, NULL))   AS unique_users,
 
   -- ── 滞在 ───────────────────────────────────────────────────
-  ROUND(AVG(
-    IF(event_name = 'page_view', engagement_time_msec / 1000, NULL)
-  ), 1)                                                                 AS avg_time_on_page_sec,
+  -- 平均エンゲージメント時間（秒）。
+  -- 旧実装は page_view の engagement_time_msec を AVG していたが、GA4 では
+  -- engagement_time_msec が page_view にはほぼ付与されず（実測: 直近30日 page_view 1,223件中 付与は2件のみ）、
+  -- 結果が全 null/0 になっていた（2026-06-23 検収R7で本番実データ検出・305/307行 null）。
+  -- 週次 marts.page_performance は 2026-05-31 に修正済みだったが、本日次テーブル新設時に旧バグ式をコピーしていた
+  -- （週次→日次の定義移行漏れ＝落とし穴#30）。週次と同一の「ページ上の全イベントの
+  --   engagement_time_msec 合算 ÷ ページビュー数」へ統一する（GA4標準の考え方）。
+  ROUND(SAFE_DIVIDE(
+    SUM(engagement_time_msec),
+    COUNTIF(event_name = 'page_view')
+  ) / 1000, 1)                                                          AS avg_time_on_page_sec,
 
   -- ── スクロール（実数 + 率） ────────────────────────────────
   COUNTIF(event_name IN ('scroll', 'scroll_depth') AND scroll_pct >= 90)            AS scroll_90pct_count,
