@@ -406,7 +406,12 @@ GROUP BY event_name ORDER BY cnt DESC'
 
 | 公開日時 | バージョン番号 | バージョン名 | 公開者 |
 |---|---|---|---|
-| 2026-05-XX | （実施後記入） | 2026-05-16_gtag→dataLayer移行_GA4Event化 | 弊社担当者 |
+| 2026-05-21 16:00 JST | version 3 | 2026-05-21_gtag→dataLayer移行_GA4Event化 | AIフローアーキテクト（GTM API・SA経由） |
+
+> 適用内容（version 3 / LIVE）: DLV変数11・カスタムイベントトリガー3・GA4イベントタグ3（測定ID直接 G-XXXXXXXXXX）・Custom HTML 3タグ全文置換。
+> **GA4設定タグは新設せず**（page_view二重計上回避＝アカウント階層Googleタグ G-XXXXXXXXXX で初期化済をプレビューで実証）。
+> プレビュー実証: GA4 Event - Scroll Depth 8回 / CTA Click 1回 / Form 1回 発火・未配信ゼロ。
+> 残: GA4→BQ反映1〜2日（新3イベントは5/22時点で反映途中の可能性）→ §6 E-3 で確認。
 
 ---
 

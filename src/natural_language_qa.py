@@ -65,9 +65,14 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
 
     if fetch_funnel:
         df = bq_client.query(f"""
+            -- 2026-06-23 検収R7-③: app.py と同一の包含定義(incl)へ統一。
+            -- 旧 step3_contact_page/step4_form_start（独立カウント）は非単調(送信完了>入力開始)で
+            -- Looker/総合ビュー(incl)と食い違うため、incl版へ揃える。
             SELECT report_date, step1_sessions,
                    step2b_service_view AS step2_service_view,
-                   step3_contact_page, step4_form_start, step5_submission,
+                   step3_contact_reach_incl AS step3_contact_page,
+                   step4_form_start_incl AS step4_form_start,
+                   step5_submission,
                    ROUND(overall_inquiry_cvr*100,2) AS inquiry_cvr_pct
             FROM `{project_id}.marts.conversion_funnel_daily`
             ORDER BY report_date DESC LIMIT 14
@@ -94,7 +99,21 @@ class NaturalLanguageQA:
         "- 数字を必ず引用する\n"
         "- 改善提案がある場合は必ず1つ以上追加する\n"
         "- データにない推測・誇張はしない\n"
-        "- 回答は400文字以内"
+        "- 回答は400文字以内\n"
+        "\n【ファネルの構造（重要・解釈を誤らないこと）】\n"
+        "- ファネルの各ステップの数値は『そのステップに到達したセッション数』であり、"
+        "前のステップを必ず通過した人数ではない。\n"
+        "- 特に『サービスページ閲覧(step2)』と『お問い合わせページ(step3)』は、"
+        "それぞれ独立に数えた到達セッション数（並列の到達指標）であって、直列の通過順ではない。\n"
+        "- ユーザーはサービスページを見ずに、広告・検索・直接アクセスから"
+        "直接お問い合わせページへ到達することもある。全員がサービス閲覧を経由する前提は誤り。\n"
+        "- よって『step1とstep2の数の差』を根拠に『最初の段階で離脱が多い』と結論づけてはいけない。\n"
+        "- 数の大小（前段≧後段の単調減少）が定義上保証されるのは"
+        "『お問い合わせページ到達(step3)≧フォーム入力開始(step4)≧送信完了(step5)』の区間のみ。"
+        "離脱・改善余地はこの区間で評価する。\n"
+        "- 全体の問い合わせ転換率は『問い合わせCVR(%)』を用いる。\n"
+        "- 回答では step1_sessions のような内部の英語カラム名をそのまま出さず、"
+        "日本語のステップ名（お問い合わせページ到達、フォーム入力開始 等）で説明する。"
     )
 
     def __init__(self, config: dict | None = None) -> None:
