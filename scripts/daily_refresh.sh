@@ -79,6 +79,8 @@ run_sql "marts.page_performance_daily"    "$SQL_DIR/marts/page_performance_daily
 # reports（VIEW: Looker Studio接続先・definition変更を毎日反映）
 run_sql "reports.rpt_looker_main (VIEW)"  "$SQL_DIR/reports/rpt_looker_main.sql"
 run_sql "reports.rpt_funnel_overview (VIEW)" "$SQL_DIR/reports/rpt_funnel_overview.sql"
+# rpt_funnel_long（ファネル分析ページ接続VIEW）も毎日反映＝定義移行漏れ防止（落とし穴#30・2026-06-25 R8-2）
+run_sql "reports.rpt_funnel_long (VIEW)"  "$SQL_DIR/reports/rpt_funnel_long.sql"
 
 echo "[$DATE] === 日次更新完了 → 鮮度チェック ===" | tee -a "$LOG"
 
