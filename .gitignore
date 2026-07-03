@@ -36,3 +36,35 @@ secrets/
 SECURITY_NOTES.md
 handover_*.md
 PDF_TRACE_KNOWLEDGE.md
+
+# client chat logs - never commit (real names / PII)
+chat_archive/
+
+# local-only QA/apply scripts and design docs (contain client identifiers: domain / GA4 / GTM / BQ project)
+docs/ACCEPTANCE_FIX_R7_20260623.md
+docs/CUSTOM_HTML_FIX_DIFF.md
+docs/GA4_FORM_SUBMIT_ALIAS_SETUP.md
+docs/GTM_FIX_GA4_CONFIG_DESIGN.md
+docs/LOOKER_NEXTPHASE_SETUP.md
+docs/NEXTPHASE_READINESS.md
+scripts/apply_d1_googtag_allpages_20260526.py
+scripts/apply_d2_tag_sequencing_20260526.py
+scripts/apply_html_fix_20260526.py
+scripts/ga4_apply_form_submit_alias.py
+scripts/gtm_apply_fix_v2.py
+scripts/integrity_5month.py
+scripts/new_ws_publish_20260526.py
+scripts/publish_only_20260526.py
+scripts/qa_bq_marts_inventory.py
+scripts/qa_diag.py
+scripts/qa_fire_events.py
+scripts/qa_gtm_html_dump.py
+scripts/qa_gtm_inspect.py
+scripts/qa_intraday_check.py
+scripts/qa_intraday_recency.py
+scripts/qa_intraday_today.py
+scripts/qa_live_inspect.py
+scripts/r8_4_funnel_rates.py
+scripts/scope_check_r8_20260629.py
+scripts/sync_and_publish_20260526.py
+scripts/verify_gtm_events.py

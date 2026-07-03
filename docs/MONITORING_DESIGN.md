@@ -640,7 +640,7 @@ labels: monitoring-alert, automated
 ### Phase 7: コミット・push
 
 - [ ] **T22.** `git status` で本名・個人メールが含まれていないことを確認
-  - 成功判定: `git diff --cached | grep -E "kosuke|@gmail\.com"` がヒット0件
+  - 成功判定: `git diff --cached | grep -E "<本名>|@gmail\.com"` がヒット0件
 - [ ] **T23.** pre-commit hook が pass することを確認してcommit
   - メッセージ例: `feat(monitoring): 4チェーン冗長化監視システム導入（事故再発防止）`
 - [ ] **T24.** push → GitHub上で全workflow が緑になることを確認
