@@ -37,6 +37,7 @@ class ReportFormatter:
 <body>
   <h1>📊 {month} Webサイト分析レポート</h1>
   <p>example.invalid | データ取得日時: {generated_date}</p>
+  <p>計測期間: {period_label}</p>
 
   <h2>KPIサマリー</h2>
   <div class="kpi-grid">
@@ -52,7 +53,7 @@ class ReportFormatter:
     </div>
     <div class="kpi-card">
       <div class="kpi-label">お問い合わせCVR</div>
-      <div class="kpi-value">{contact_cr:.2f}%</div>
+      <div class="kpi-value">{inquiry_cvr:.2f}%</div>
       <div class="kpi-target">資料DL: {downloads}件</div>
     </div>
   </div>
@@ -84,7 +85,13 @@ class ReportFormatter:
         sessions = int(kpi.get("sessions", 0))
         inquiries = int(kpi.get("inquiries", 0))
         downloads = int(kpi.get("downloads", 0))
-        contact_cr = round(float(kpi.get("contact_cr", 0)) * 100, 2)
+        # お問い合わせCVR = 問合せ完了 / 全セッション（inquiry_cvr）。
+        # 旧 contact_cr（到達→完了率）はファネル中間率でありCVRカードには不適切。
+        inquiry_cvr = round(float(kpi.get("inquiry_cvr", 0) or 0) * 100, 2)
+        # 実集計期間（月初〜送信日ではなくデータが実在する MIN/MAX report_date）
+        period_start = kpi.get("period_start")
+        period_end = kpi.get("period_end")
+        period_label = f"{period_start}〜{period_end}" if period_start and period_end else month
 
         # 目標達成でカラー変更
         sessions_class = "good" if sessions >= 5000 else "bad"
@@ -97,11 +104,12 @@ class ReportFormatter:
         return self.HTML_TEMPLATE.format(
             month=month,
             generated_date=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
+            period_label=period_label,
             sessions=sessions,
             sessions_class=sessions_class,
             inquiries=inquiries,
             inquiry_class=inquiry_class,
-            contact_cr=contact_cr,
+            inquiry_cvr=inquiry_cvr,
             downloads=downloads,
             executive_insight=executive_html,
             ops_insight=ops_html,
@@ -117,11 +125,16 @@ class ReportFormatter:
         """Markdownレポートを生成（Drive保存用）"""
         sessions = int(kpi.get("sessions", 0))
         inquiries = int(kpi.get("inquiries", 0))
-        contact_cr = round(float(kpi.get("contact_cr", 0)) * 100, 2)
+        # お問い合わせCVR = 問合せ完了 / 全セッション（inquiry_cvr）
+        inquiry_cvr = round(float(kpi.get("inquiry_cvr", 0) or 0) * 100, 2)
+        period_start = kpi.get("period_start")
+        period_end = kpi.get("period_end")
+        period_label = f"{period_start}〜{period_end}" if period_start and period_end else month
 
         return f"""# {month} Webサイト分析レポート
 
 > example.invalid | データ取得日時: {datetime.now().strftime('%Y年%m月%d日 %H:%M')}
+> 計測期間: {period_label}
 
 ## KPIサマリー
 
@@ -129,7 +142,7 @@ class ReportFormatter:
 |------|------|------|--------|
 | 月間セッション | {sessions:,} | 5,000 | {sessions/50:.1f}% |
 | お問い合わせ数 | {inquiries} | 9件 | {inquiries/9*100:.1f}% |
-| お問い合わせCVR | {contact_cr}% | - | - |
+| お問い合わせCVR | {inquiry_cvr}% | - | - |
 | 資料DL数 | {int(kpi.get('downloads', 0))} | 30件 | {int(kpi.get('downloads', 0))/30*100:.1f}% |
 
 ---

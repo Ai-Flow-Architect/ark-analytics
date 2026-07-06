@@ -62,7 +62,8 @@ class GA4DataCollector:
           SUM(appointment_bookings)                 AS appointments,
           SUM(total_conversions)                    AS total_conversions,
           ROUND(SAFE_DIVIDE(SUM(contact_form_submissions), NULLIF(SUM(contact_form_views), 0)), 4)  AS contact_cr,
-          ROUND(SAFE_DIVIDE(SUM(contact_form_submissions) + SUM(document_downloads), NULLIF(SUM(sessions), 0)), 4)  AS overall_cvr
+          ROUND(SAFE_DIVIDE(SUM(contact_form_submissions) + SUM(document_downloads), NULLIF(SUM(sessions), 0)), 4)  AS overall_cvr,
+          ROUND(SAFE_DIVIDE(SUM(contact_form_submissions), NULLIF(SUM(sessions), 0)), 4)  AS inquiry_cvr
         FROM `{self.project_id}.marts.daily_kpi_summary`
         WHERE FORMAT_DATE('%Y-%m', report_date) = @target_month
         HAVING COUNT(*) > 0
@@ -129,24 +130,25 @@ class GA4DataCollector:
         return {"current": current, "previous": previous, "diff": diff}
 
     def get_top_pages(self, target_month: str, limit: int = 10) -> pd.DataFrame:
-        """PV上位ページを返す"""
+        """PV上位ページを返す
+
+        週次grainの marts.page_performance ではなく日次grainの
+        marts.page_performance_daily を月フィルタで集計する（週grainは月境界を
+        またぐ週が混入し月次と期間不一致だった）。率・平均はPV加重
+        （(率や平均)×pageviews のSUM ÷ pageviewsのSUM ＝実数ベース）で算出する。
+        """
         query = f"""
         SELECT
           page_path,
-          page_title,
-          SUM(pageviews)                          AS pageviews,
-          ROUND(AVG(avg_time_on_page_sec), 1)     AS avg_time_sec,
-          ROUND(AVG(scroll_90pct_rate) * 100, 1)  AS scroll_90pct_rate_pct,
-          ROUND(AVG(cta_click_rate) * 100, 1)     AS cta_click_rate_pct,
-          SUM(conversions_from_page)              AS conversions
-        FROM `{self.project_id}.marts.page_performance`
-        WHERE week_start >= DATE_TRUNC(
-          DATE(CONCAT(@target_month, '-01')), MONTH
-        )
-        AND week_start < DATE_ADD(
-          DATE_TRUNC(DATE(CONCAT(@target_month, '-01')), MONTH), INTERVAL 1 MONTH
-        )
-        GROUP BY page_path, page_title
+          ANY_VALUE(page_title)                                                    AS page_title,
+          SUM(pageviews)                                                           AS pageviews,
+          ROUND(SAFE_DIVIDE(SUM(avg_time_on_page_sec * pageviews), SUM(pageviews)), 1) AS avg_time_sec,
+          ROUND(SAFE_DIVIDE(SUM(scroll_90pct_count), SUM(pageviews)) * 100, 1)     AS scroll_90pct_rate_pct,
+          ROUND(SAFE_DIVIDE(SUM(cta_clicks),        SUM(pageviews)) * 100, 1)      AS cta_click_rate_pct,
+          SUM(conversions_from_page)                                               AS conversions
+        FROM `{self.project_id}.marts.page_performance_daily`
+        WHERE FORMAT_DATE('%Y-%m', report_date) = @target_month
+        GROUP BY page_path
         ORDER BY pageviews DESC
         LIMIT @lim
         """
@@ -159,18 +161,26 @@ class GA4DataCollector:
         return self.client.query(query, job_config=job_config).to_dataframe()
 
     def get_funnel_summary(self, target_month: str) -> dict[str, Any]:
-        """ファネル集計（月次平均）"""
+        """ファネル集計（月次・実数合計＋期間加重率）
+
+        率は AVG(日次率) ではなく ratio of sums（SUM分子/SUM分母）で算出する。
+        AVG(日次率)は少数セッション日の率を過大評価し、Step2→3が100%超になる等の
+        Simpson平均バグの真因だった（2026-06検収指摘）。
+        ステップ列は単調ファネル用の包含定義（step3_contact_reach_incl /
+        step4_form_start_incl）を使用し、到達⊇入力開始⊇完了の単調性を保証する。
+        """
         query = f"""
         SELECT
-          ROUND(AVG(step1_sessions), 0)       AS avg_sessions,
-          ROUND(AVG(step3_contact_page), 0)   AS avg_contact_page,
-          ROUND(AVG(step4_form_start), 0)     AS avg_form_start,
-          ROUND(AVG(step5_submission), 0)     AS avg_submission,
-          ROUND(AVG(step1_to_2b_rate)*100, 2)  AS step1_to_2_pct,
-          ROUND(AVG(step2b_to_3_rate)*100, 2)  AS step2_to_3_pct,
-          ROUND(AVG(step3_to_4_rate)*100, 2)  AS step3_to_4_pct,
-          ROUND(AVG(step4_to_5_rate)*100, 2)  AS step4_to_5_pct,
-          ROUND(AVG(overall_inquiry_cvr)*100, 2) AS overall_inquiry_cvr_pct
+          SUM(step1_sessions)                        AS sessions_total,
+          SUM(step2b_service_view)                   AS service_view_total,
+          SUM(step3_contact_reach_incl)              AS contact_reach_total,
+          SUM(step4_form_start_incl)                 AS form_start_total,
+          SUM(step5_submission)                      AS submission_total,
+          ROUND(SAFE_DIVIDE(SUM(step2b_service_view),      SUM(step1_sessions))          *100, 2) AS step1_to_2_pct,
+          ROUND(SAFE_DIVIDE(SUM(step3_contact_reach_incl), SUM(step2b_service_view))     *100, 2) AS step2_to_3_pct,
+          ROUND(SAFE_DIVIDE(SUM(step4_form_start_incl),    SUM(step3_contact_reach_incl))*100, 2) AS step3_to_4_pct,
+          ROUND(SAFE_DIVIDE(SUM(step5_submission),         SUM(step4_form_start_incl))   *100, 2) AS step4_to_5_pct,
+          ROUND(SAFE_DIVIDE(SUM(step5_submission),         SUM(step1_sessions))          *100, 2) AS overall_inquiry_cvr_pct
         FROM `{self.project_id}.marts.conversion_funnel_daily`
         WHERE FORMAT_DATE('%Y-%m', report_date) = @target_month
         """

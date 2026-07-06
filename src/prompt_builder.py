@@ -23,15 +23,15 @@ class PromptBuilder:
         - エンゲージメント率: {engagement_rate:.1f}%
         - お問い合わせ数: {inquiries}件（目標: 9件、前月比: {inquiries_mom:+.1f}%）
         - 資料DL数: {downloads}件（前月比: {downloads_mom:+.1f}%）
-        - お問い合わせCVR: {contact_cr:.2f}%（前月比: {contact_cr_mom:+.2f}pt）
+        - お問い合わせCVR（問合せ完了/全セッション）: {inquiry_cvr:.2f}%（前月比: {inquiry_cvr_mom:+.1f}%）
 
         ## チャネル別データ
         {channel_table}
 
         ## ファネル状況
-        - サイト訪問 → 問合せページ到達率: {step2_to_3_pct}%
-        - 問合せページ → フォーム入力開始率: {step3_to_4_pct}%
-        - フォーム入力 → 送信完了率: {step4_to_5_pct}%
+        - サービスページ閲覧→お問い合わせ到達率: {step2_to_3_pct}%（{service_view_total}件→{contact_reach_total}件）
+        - お問い合わせ到達→フォーム入力開始率: {step3_to_4_pct}%（{contact_reach_total}件→{form_start_total}件）
+        - フォーム入力開始→送信完了率: {step4_to_5_pct}%（{form_start_total}件→{submission_total}件）
 
         ## 目標
         - KGI: 月3件成約
@@ -54,16 +54,16 @@ class PromptBuilder:
         ## KPIサマリー
         - セッション数: {sessions:,}（前月比: {sessions_mom:+.1f}%）
         - エンゲージメント率: {engagement_rate:.1f}%
-        - お問い合わせ数: {inquiries}件（CVR: {contact_cr:.2f}%）
+        - お問い合わせ数: {inquiries}件（お問い合わせCVR: {inquiry_cvr:.2f}%）
         - 資料DL数: {downloads}件
 
         ## ファネル詳細
-        - Step1 サイト訪問: {sessions:,}
-        - Step2 サービスページ閲覧率: {step1_to_2_pct}%
-        - Step3 問合せページ到達率: {step2_to_3_pct}%
-        - Step4 フォーム入力開始率: {step3_to_4_pct}%
-        - Step5 フォーム送信完了率: {step4_to_5_pct}%
-        - 全体お問い合わせCVR: {overall_inquiry_cvr_pct}%
+        - Step1 サイト訪問: {sessions_total:,}件
+        - Step2 サービスページ閲覧: {service_view_total}件（サイト訪問→サービスページ閲覧率: {step1_to_2_pct}%）
+        - Step3 お問い合わせ到達: {contact_reach_total}件（サービスページ閲覧→お問い合わせ到達率: {step2_to_3_pct}%）
+        - Step4 フォーム入力開始: {form_start_total}件（お問い合わせ到達→フォーム入力開始率: {step3_to_4_pct}%）
+        - Step5 フォーム送信完了: {submission_total}件（フォーム入力開始→送信完了率: {step4_to_5_pct}%）
+        - 全体お問い合わせCVR（サイト訪問→送信完了）: {overall_inquiry_cvr_pct}%
 
         ## 主要ページパフォーマンス（上位5ページ）
         {top_pages_table}
@@ -104,9 +104,13 @@ class PromptBuilder:
             inquiries_mom=mom.get("inquiries_mom", 0),
             downloads=int(kpi.get("downloads", 0)),
             downloads_mom=mom.get("downloads_mom", 0),
-            contact_cr=round(float(kpi.get("contact_cr", 0)) * 100, 2),
-            contact_cr_mom=mom.get("contact_cr_mom", 0),
+            inquiry_cvr=round(float(kpi.get("inquiry_cvr", 0) or 0) * 100, 2),
+            inquiry_cvr_mom=mom.get("inquiry_cvr_mom", 0),
             channel_table=channel_table,
+            service_view_total=self._funnel_int(funnel, "service_view_total"),
+            contact_reach_total=self._funnel_int(funnel, "contact_reach_total"),
+            form_start_total=self._funnel_int(funnel, "form_start_total"),
+            submission_total=self._funnel_int(funnel, "submission_total"),
             step2_to_3_pct=funnel.get("step2_to_3_pct", "N/A"),
             step3_to_4_pct=funnel.get("step3_to_4_pct", "N/A"),
             step4_to_5_pct=funnel.get("step4_to_5_pct", "N/A"),
@@ -135,7 +139,12 @@ class PromptBuilder:
             engagement_rate=round(float(kpi.get("engagement_rate", 0)) * 100, 1),
             inquiries=int(kpi.get("inquiries", 0)),
             downloads=int(kpi.get("downloads", 0)),
-            contact_cr=round(float(kpi.get("contact_cr", 0)) * 100, 2),
+            inquiry_cvr=round(float(kpi.get("inquiry_cvr", 0) or 0) * 100, 2),
+            sessions_total=self._funnel_int(funnel, "sessions_total"),
+            service_view_total=self._funnel_int(funnel, "service_view_total"),
+            contact_reach_total=self._funnel_int(funnel, "contact_reach_total"),
+            form_start_total=self._funnel_int(funnel, "form_start_total"),
+            submission_total=self._funnel_int(funnel, "submission_total"),
             step1_to_2_pct=funnel.get("step1_to_2_pct", "N/A"),
             step2_to_3_pct=funnel.get("step2_to_3_pct", "N/A"),
             step3_to_4_pct=funnel.get("step3_to_4_pct", "N/A"),
@@ -144,6 +153,15 @@ class PromptBuilder:
             top_pages_table=top_pages_table,
             channel_table=channel_table,
         )
+
+    @staticmethod
+    def _funnel_int(funnel: dict, key: str) -> int:
+        """ファネル実数値を安全にint化（欠損・None・NaNは0）"""
+        val = funnel.get(key)
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     def _df_to_markdown(df: "pd.DataFrame") -> str:

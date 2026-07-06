@@ -2,8 +2,9 @@ name: Monthly Report
 
 on:
   schedule:
-    # 毎月1日 AM 9:00 JST = 毎月1日 0:00 UTC
-    - cron: '0 0 1 * *'
+    # 毎月3日 AM 9:00 JST = 毎月3日 0:00 UTC
+    # （GA4→BigQuery確定エクスポートの反映遅延で月初実行だと月末1〜2日分が欠損するため、毎月1日→3日へ変更）
+    - cron: '0 0 3 * *'
   workflow_dispatch:
     inputs:
       month:
