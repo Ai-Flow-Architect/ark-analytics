@@ -16,6 +16,8 @@ MAX(report_date) が today - threshold_days より古ければ Lark通知 + sys.
   0: 鮮度OK（threshold以内）
   1: データが古い・テーブルなし → Lark通知済み
   2: 引数エラー / プロジェクトID未解決（=設定不備）
+     ※ プロジェクトID未解決の Lark通知は CI(GITHUB_ACTIONS)実行時のみ。
+       ローカル実行(env未設定)は stderr 出力のみで運用アラートを鳴らさない。
 """
 from __future__ import annotations
 
@@ -43,11 +45,23 @@ def main() -> int:
     try:
         project_id = get_project_id()
     except RuntimeError as e:
-        notify_failure(
-            job="data_freshness_check",
-            reason=f"GCPプロジェクトID未解決: {e}",
-            context={"source": args.source},
-        )
+        # プロジェクトID未解決は「データ障害(rc=1)」ではなく「設定不備(rc=2)」。
+        # CI(GitHub Actions)ではSecret欠落の可能性がある真の異常なのでLark通知する。
+        # ローカル実行(env未export)は開発者の設定漏れに過ぎず、運用アラート
+        # チャンネルへの誤ページングになるため通知しない（stderr＋exit2でfail-fast）。
+        msg = f"GCPプロジェクトID未解決: {e}"
+        if os.environ.get("GITHUB_ACTIONS"):
+            notify_failure(
+                job="data_freshness_check",
+                reason=msg,
+                context={"source": args.source},
+            )
+        else:
+            print(
+                f"[freshness] 設定不備で中断（Lark通知なし・ローカル実行）: {msg}\n"
+                f"  ローカルで実行する場合は環境変数 ARK_GCP_PROJECT_ID を export してください。",
+                file=sys.stderr,
+            )
         return 2
 
     try:
