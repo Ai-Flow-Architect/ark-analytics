@@ -44,7 +44,14 @@ SELECT
   ) * 100, 2)                                                           AS scroll_90pct_rate_pct,
 
   -- ── CTAクリック（実数 + 率） ───────────────────────────────
+  -- cta_clicks = 延べクリック回数（同一セッションの複数クリックを含む）。
+  -- cta_click_sessions = クリックしたセッション数（ページ単位のセッション重複排除）。
+  -- 2026-07-08 検収R10-4: Lookerページ別表が cta_clicks（延べ）を「CTAクリックセッション数」
+  -- ラベルで表示しており、総合ビュー（rpt_funnel_overview.cta_click = セッションDISTINCT）と
+  -- 9 vs 8 の不一致を生んだ（実証: 2026-07-03 セッション1件が "/" で2回クリック）。
+  -- Lookerページ別の「セッション数」列は本列（cta_click_sessions）へ差し替えること。
   COUNTIF(event_name = 'cta_click')                                    AS cta_clicks,
+  COUNT(DISTINCT IF(event_name = 'cta_click', session_id, NULL))       AS cta_click_sessions,
   ROUND(SAFE_DIVIDE(
     COUNTIF(event_name = 'cta_click'),
     COUNTIF(event_name = 'page_view')

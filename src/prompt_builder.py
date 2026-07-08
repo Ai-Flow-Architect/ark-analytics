@@ -9,19 +9,31 @@ import textwrap
 
 import pandas as pd
 
+from src._config_loader import get_kpi_targets
+
 
 class PromptBuilder:
-    """KPIデータ → 分析プロンプト変換"""
+    """KPIデータ → 分析プロンプト変換
+
+    KPI目標値は settings.yaml (kpi_targets) をSSOTとして参照する。
+    ハードコード禁止（2026-07-08 目標9→6変更漏れ事故の再発防止）。
+    """
+
+    def __init__(self, config: dict | None = None) -> None:
+        targets = get_kpi_targets(config)
+        self.sessions_target = targets["monthly_sessions"]
+        self.inquiry_target = targets["monthly_inquiries"]
+        self.contracts_target = targets["monthly_contracts"]
 
     EXECUTIVE_TEMPLATE = textwrap.dedent("""\
         あなたはWebマーケティングの専門データアナリストです。
         以下の{month}のGA4データを分析し、経営層向けに簡潔なインサイトレポートを作成してください。
 
         ## 今月のKPIデータ
-        - セッション数: {sessions:,}（目標: 5,000、前月比: {sessions_mom:+.1f}%）
+        - セッション数: {sessions:,}（目標: {sessions_target:,}、前月比: {sessions_mom:+.1f}%）
         - 目標達成率: {sessions_target_rate:.1f}%
         - エンゲージメント率: {engagement_rate:.1f}%
-        - お問い合わせ数: {inquiries}件（目標: 9件、前月比: {inquiries_mom:+.1f}%）
+        - お問い合わせ数: {inquiries}件（目標: {inquiry_target}件、前月比: {inquiries_mom:+.1f}%）
         - 資料DL数: {downloads}件（前月比: {downloads_mom:+.1f}%）
         - お問い合わせCVR（問合せ完了/全セッション）: {inquiry_cvr:.2f}%（前月比: {inquiry_cvr_mom:+.1f}%）
 
@@ -34,8 +46,8 @@ class PromptBuilder:
         - フォーム入力開始→送信完了率: {step4_to_5_pct}%（{form_start_total}件→{submission_total}件）
 
         ## 目標
-        - KGI: 月3件成約
-        - KPI: 月間セッション5,000 / お問い合わせ9件
+        - KGI: 月{contracts_target}件成約
+        - KPI: 月間セッション{sessions_target:,} / お問い合わせ{inquiry_target}件
 
         ## 出力形式（Markdown）
         ### 今月の総評（3行以内）
@@ -92,10 +104,15 @@ class PromptBuilder:
         channel_table = self._df_to_markdown(
             channel_df[["channel_grouping", "sessions", "conversions", "conversion_rate_pct"]]
         )
-        sessions_target_rate = (kpi.get("sessions", 0) / 5000 * 100) if kpi.get("sessions") else 0
+        sessions_target_rate = (
+            (kpi.get("sessions", 0) / self.sessions_target * 100) if kpi.get("sessions") else 0
+        )
 
         return self.EXECUTIVE_TEMPLATE.format(
             month=month,
+            sessions_target=self.sessions_target,
+            inquiry_target=self.inquiry_target,
+            contracts_target=self.contracts_target,
             sessions=int(kpi.get("sessions", 0)),
             sessions_mom=mom.get("sessions_mom", 0),
             sessions_target_rate=sessions_target_rate,

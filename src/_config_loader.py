@@ -42,6 +42,24 @@ def load_config() -> dict:
     return cfg
 
 
+def get_kpi_targets(config: dict | None = None) -> dict:
+    """KPI目標値の単一の真実 (SSOT)。settings.yaml の kpi_targets を返す。
+
+    レポート/プロンプト/通知の各所でハードコードせず必ずここを経由する
+    （2026-07-08 クライアント指摘: お問い合わせ目標がコード各所に「9」で
+    ハードコードされ、目標変更(9→6)が反映されない事故の再発防止）。
+    """
+    cfg = config if config is not None else load_config()
+    targets = cfg.get("kpi_targets") or {}
+    return {
+        "monthly_sessions": int(targets.get("monthly_sessions", 5000)),
+        "monthly_inquiries": int(targets.get("monthly_inquiries", 6)),
+        "monthly_downloads": int(targets.get("monthly_downloads", 30)),
+        "monthly_appointments": int(targets.get("monthly_appointments", 6)),
+        "monthly_contracts": int(targets.get("monthly_contracts", 3)),
+    }
+
+
 def get_project_id(config: dict | None = None) -> str:
     """GCPプロジェクトIDの単一の真実 (SSOT)。
 

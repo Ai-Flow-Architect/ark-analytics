@@ -7,9 +7,21 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
+from src._config_loader import get_kpi_targets
+
 
 class ReportFormatter:
-    """AI分析テキスト → HTMLメール・Markdownレポートに変換"""
+    """AI分析テキスト → HTMLメール・Markdownレポートに変換
+
+    KPI目標値は settings.yaml (kpi_targets) をSSOTとして参照する。
+    ハードコード禁止（2026-07-08 目標9→6変更漏れ事故の再発防止）。
+    """
+
+    def __init__(self, config: dict | None = None) -> None:
+        targets = get_kpi_targets(config)
+        self.sessions_target = targets["monthly_sessions"]
+        self.inquiry_target = targets["monthly_inquiries"]
+        self.downloads_target = targets["monthly_downloads"]
 
     HTML_TEMPLATE = """\
 <!DOCTYPE html>
@@ -44,12 +56,12 @@ class ReportFormatter:
     <div class="kpi-card">
       <div class="kpi-label">月間セッション</div>
       <div class="kpi-value {sessions_class}">{sessions:,}</div>
-      <div class="kpi-target">目標: 5,000</div>
+      <div class="kpi-target">目標: {sessions_target:,}</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">お問い合わせ数</div>
       <div class="kpi-value {inquiry_class}">{inquiries}</div>
-      <div class="kpi-target">目標: 9件</div>
+      <div class="kpi-target">目標: {inquiry_target}件</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">お問い合わせCVR</div>
@@ -93,9 +105,9 @@ class ReportFormatter:
         period_end = kpi.get("period_end")
         period_label = f"{period_start}〜{period_end}" if period_start and period_end else month
 
-        # 目標達成でカラー変更
-        sessions_class = "good" if sessions >= 5000 else "bad"
-        inquiry_class = "good" if inquiries >= 9 else "bad"
+        # 目標達成でカラー変更（目標値は settings.yaml kpi_targets 参照）
+        sessions_class = "good" if sessions >= self.sessions_target else "bad"
+        inquiry_class = "good" if inquiries >= self.inquiry_target else "bad"
 
         # MarkdownをシンプルなHTML変換
         executive_html = self._md_to_simple_html(executive_insight)
@@ -105,6 +117,8 @@ class ReportFormatter:
             month=month,
             generated_date=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
             period_label=period_label,
+            sessions_target=self.sessions_target,
+            inquiry_target=self.inquiry_target,
             sessions=sessions,
             sessions_class=sessions_class,
             inquiries=inquiries,
@@ -140,10 +154,10 @@ class ReportFormatter:
 
 | 指標 | 実績 | 目標 | 達成率 |
 |------|------|------|--------|
-| 月間セッション | {sessions:,} | 5,000 | {sessions/50:.1f}% |
-| お問い合わせ数 | {inquiries} | 9件 | {inquiries/9*100:.1f}% |
+| 月間セッション | {sessions:,} | {self.sessions_target:,} | {sessions/self.sessions_target*100:.1f}% |
+| お問い合わせ数 | {inquiries} | {self.inquiry_target}件 | {inquiries/self.inquiry_target*100:.1f}% |
 | お問い合わせCVR | {inquiry_cvr}% | - | - |
-| 資料DL数 | {int(kpi.get('downloads', 0))} | 30件 | {int(kpi.get('downloads', 0))/30*100:.1f}% |
+| 資料DL数 | {int(kpi.get('downloads', 0))} | {self.downloads_target}件 | {int(kpi.get('downloads', 0))/self.downloads_target*100:.1f}% |
 
 ---
 

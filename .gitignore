@@ -42,6 +42,7 @@ chat_archive/
 
 # local-only QA/apply scripts and design docs (contain client identifiers: domain / GA4 / GTM / BQ project)
 docs/ACCEPTANCE_FIX_R7_20260623.md
+docs/ACCEPTANCE_FIX_R10_20260709.md
 docs/CUSTOM_HTML_FIX_DIFF.md
 docs/GA4_FORM_SUBMIT_ALIAS_SETUP.md
 docs/GTM_FIX_GA4_CONFIG_DESIGN.md

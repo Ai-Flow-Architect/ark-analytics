@@ -16,7 +16,7 @@ import requests
 import yaml
 
 
-from src._config_loader import load_config as _load_config
+from src._config_loader import get_kpi_targets, load_config as _load_config
 
 
 class ReportDelivery:
@@ -134,8 +134,12 @@ class ReportDelivery:
 
         sessions = int(kpi.get("sessions", 0))
         inquiries = int(kpi.get("inquiries", 0))
-        sessions_rate = sessions / 5000 * 100
-        inquiry_rate = inquiries / 9 * 100
+        # KPI目標値は settings.yaml kpi_targets をSSOTとして参照（ハードコード禁止）
+        targets = get_kpi_targets(self.config)
+        sessions_target = targets["monthly_sessions"]
+        inquiry_target = targets["monthly_inquiries"]
+        sessions_rate = sessions / sessions_target * 100
+        inquiry_rate = inquiries / inquiry_target * 100
 
         drive_text = f"\n📄 レポートURL: {drive_url}" if drive_url else ""
 
@@ -145,8 +149,8 @@ class ReportDelivery:
                 "text": (
                     f"📊 {month} 月次レポート自動生成完了\n"
                     f"━━━━━━━━━━━━━━\n"
-                    f"セッション: {sessions:,} ({sessions_rate:.1f}% / 目標5,000)\n"
-                    f"お問い合わせ: {inquiries}件 ({inquiry_rate:.1f}% / 目標9件)\n"
+                    f"セッション: {sessions:,} ({sessions_rate:.1f}% / 目標{sessions_target:,})\n"
+                    f"お問い合わせ: {inquiries}件 ({inquiry_rate:.1f}% / 目標{inquiry_target}件)\n"
                     f"資料DL: {int(kpi.get('downloads', 0))}件\n"
                     f"CVR: {round(float(kpi.get('contact_cr', 0)) * 100, 2)}%"
                     f"{drive_text}"

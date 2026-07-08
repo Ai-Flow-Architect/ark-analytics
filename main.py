@@ -128,7 +128,17 @@ def run_monthly_report(month: str, dry_run: bool = False) -> None:
     if dry_run:
         print("\n--- [DRY RUN] レポートプレビュー (Markdown) ---")
         print(md_report[:2000])
-        print("\n--- [DRY RUN] 送信はスキップしました ---")
+        # 検収共有用に実配信と同一のHTML/Markdown現物を保存（logs/ はgitignore済）
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "dryrun")
+        os.makedirs(out_dir, exist_ok=True)
+        html_path = os.path.join(out_dir, f"monthly_{month}_report.html")
+        md_path = os.path.join(out_dir, f"monthly_{month}_report.md")
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_report)
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(md_report)
+        print(f"\n--- [DRY RUN] 現物を保存: {html_path} / {md_path} ---")
+        print("--- [DRY RUN] 送信はスキップしました ---")
         return
 
     # 5. 配信
@@ -148,15 +158,23 @@ def run_monthly_report(month: str, dry_run: bool = False) -> None:
     print(f"\n✅ {month} 月次レポート完了")
 
 
-def run_weekly_report(frequency: str = "weekly") -> None:
+def run_weekly_report(frequency: str = "weekly", dry_run: bool = False) -> None:
     """週次/隔週ミニレポート（Lark通知 + メール配信）
 
     Args:
         frequency: "weekly"（毎週）または "biweekly"（隔週）
+        dry_run: True の場合、メール送信せず現物HTMLを logs/dryrun/ に保存
     """
     from src.data_collector import GA4DataCollector
     from src.delivery import ReportDelivery
     from src.report_formatter import ReportFormatter
+    from src._config_loader import get_kpi_targets
+
+    # KPI目標値は settings.yaml kpi_targets をSSOTとして参照（ハードコード禁止・
+    # 2026-07-08 お問い合わせ目標9→6変更漏れ事故の再発防止）
+    targets = get_kpi_targets()
+    sessions_target = targets["monthly_sessions"]
+    inquiry_target = targets["monthly_inquiries"]
 
     today = date.today()
 
@@ -173,7 +191,7 @@ def run_weekly_report(frequency: str = "weekly") -> None:
     print(f"\n=== ark-analytics 週次ミニレポート ({today}) ===\n")
 
     # 0. データ鮮度プリチェック（threshold 2日）
-    _run_freshness_check(threshold_days=2, source="pre_weekly_report", dry_run=False)
+    _run_freshness_check(threshold_days=2, source="pre_weekly_report", dry_run=dry_run)
 
     collector = GA4DataCollector()
     kpi = collector.get_monthly_kpi(month)
@@ -229,12 +247,12 @@ def run_weekly_report(frequency: str = "weekly") -> None:
   <tr style="background:#f8faff;">
     <td style="padding:10px 14px;border:1px solid #e2e8f0;font-weight:700;">セッション数</td>
     <td style="padding:10px 14px;border:1px solid #e2e8f0;">{sessions:,}件
-      <span style="color:#64748b;font-size:12px;">（目標 5,000件 / 達成率 {sessions/5000*100:.1f}%）</span></td>
+      <span style="color:#64748b;font-size:12px;">（目標 {sessions_target:,}件 / 達成率 {sessions/sessions_target*100:.1f}%）</span></td>
   </tr>
   <tr>
     <td style="padding:10px 14px;border:1px solid #e2e8f0;font-weight:700;">問合せ数</td>
     <td style="padding:10px 14px;border:1px solid #e2e8f0;">{inquiries}件
-      <span style="color:#64748b;font-size:12px;">（目標 9件 / 達成率 {inquiries/9*100:.1f}%）</span></td>
+      <span style="color:#64748b;font-size:12px;">（目標 {inquiry_target}件 / 達成率 {inquiries/inquiry_target*100:.1f}%）</span></td>
   </tr>
   <tr style="background:#f8faff;">
     <td style="padding:10px 14px;border:1px solid #e2e8f0;font-weight:700;">資料DL数</td>
@@ -253,6 +271,17 @@ def run_weekly_report(frequency: str = "weekly") -> None:
 <p style="font-size:12px;color:#94a3b8;">このメールは ark-analytics 自動配信システムにより送信されています。</p>
 </body></html>
 """
+    if dry_run:
+        # 検収共有用に実配信と同一のHTML現物を保存（logs/ はgitignore済）
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "dryrun")
+        os.makedirs(out_dir, exist_ok=True)
+        html_path = os.path.join(out_dir, f"weekly_{today}_report.html")
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_body)
+        print(f"--- [DRY RUN] 現物を保存: {html_path} ---")
+        print("--- [DRY RUN] 送信はスキップしました ---")
+        return
+
     cc_emails = [e.strip() for e in os.environ.get("ARK_CC_EMAILS", "").split(",") if e.strip()] or None
     delivery.send_gmail(
         month,
@@ -320,7 +349,7 @@ def main() -> None:
         month = get_target_month(args.month)
         run_monthly_report(month, dry_run=args.dry_run)
     elif args.report_type == "weekly":
-        run_weekly_report(frequency=args.frequency)
+        run_weekly_report(frequency=args.frequency, dry_run=args.dry_run)
     elif args.report_type == "qa":
         run_qa(args.question)
     elif args.report_type == "scorer":
