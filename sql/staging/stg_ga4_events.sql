@@ -36,6 +36,14 @@ SELECT
   geo.country                                                                        AS country,
   geo.region                                                                         AS region,
 
+  -- セッション通番（GA4標準 ga_session_number: ユーザー通算のセッション番号・初回=1）。
+  -- 2026-07-09 定義書対応で追加: 主要分析「新規/リピーター」は
+  -- 『訪問（セッション）が初回だったか、2回目以降だったか』のセッション単位定義のため、
+  -- GA4ネイティブの通番で厳密判定する（日付粒度の近似だと同日2回目以降の訪問が
+  -- 「新規」に混入する: 2026-06実測で35セッション過大）。
+  (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'ga_session_number')
+                                                                                     AS ga_session_number,
+
   -- エンゲージメント
   (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'engaged_session_event')
                                                                                      AS engaged_session_event,

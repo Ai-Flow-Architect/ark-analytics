@@ -9,6 +9,15 @@ CREATE OR REPLACE TABLE `__ARK_PROJECT__.marts.page_performance_daily`
 PARTITION BY report_date
 CLUSTER BY page_path
 AS
+-- お問い合わせ完了（contact_finish = /contact/?mode=finish 到達）したセッション一覧。
+-- 定義書2026-07-09「ページ経由CV数 = そのページを見たユーザーが最終的にお問い合わせ完了
+-- まで到達した件数（セッション単位）」の判定に使う。
+WITH inquiry_sessions AS (
+  SELECT DISTINCT session_id AS inq_session_id
+  FROM `__ARK_PROJECT__.staging.stg_ga4_events`
+  WHERE event_name = 'contact_finish'
+    AND session_id IS NOT NULL
+)
 SELECT
   event_date                                                            AS report_date,
   page_path,
@@ -61,8 +70,37 @@ SELECT
     COUNTIF(event_name = 'page_view')
   ) * 100, 2)                                                           AS cta_click_rate_pct,
 
+  -- CTAクリック率【定義書2026-07-09 準拠版】
+  --   = CTAクリックセッション数 ÷ ページ閲覧セッション数（分子分母ともセッション単位）。
+  --   旧 cta_click_rate は「延べクリック ÷ 延べPV」で定義書と粒度が異なる（後方互換で残置）。
+  --   Looker ページ別表の「CTAクリック率」は本列（期間集計は
+  --   SUM(cta_click_sessions)/SUM(unique_pageviews)*100 の ratio of sums）へ差し替えること。
+  ROUND(SAFE_DIVIDE(
+    COUNT(DISTINCT IF(event_name = 'cta_click', session_id, NULL)),
+    COUNT(DISTINCT IF(event_name = 'page_view', session_id, NULL))
+  ), 4)                                                                 AS cta_click_session_rate,
+  ROUND(SAFE_DIVIDE(
+    COUNT(DISTINCT IF(event_name = 'cta_click', session_id, NULL)),
+    COUNT(DISTINCT IF(event_name = 'page_view', session_id, NULL))
+  ) * 100, 2)                                                           AS cta_click_session_rate_pct,
+
   -- ── コンバージョン（実数） ─────────────────────────────────
+  -- 旧列（後方互換で残置）: CVイベントがそのページ上で発火した件数。
+  --   contact_finish は完了ページ（/contact/?mode=finish）でのみ発火するため、
+  --   実質「完了ページの行にだけ49件」が立つ（2026-07-09 本番実測で確認）。
+  --   定義書の「ページ経由CV数」とは意味が異なるので Looker では使わないこと。
   COUNT(DISTINCT IF(is_conversion, session_id, NULL))                  AS conversions_from_page,
+
+  -- ページ経由CV数【定義書2026-07-09 準拠版】
+  --   = そのページを閲覧したセッションのうち、最終的にお問い合わせ完了
+  --     （/contact/?mode=finish 到達 = contact_finish）まで到達したセッション数。
+  --   定義書の記載どおり分子はお問い合わせ完了のみ（資料DL/相談予約は含めない）。
+  --   ※1セッションが複数ページを閲覧して完了した場合、閲覧した各ページに1ずつ立つ
+  --     （「経由」の定義上正常。全ページ合算は総CV数を上回り得る）。
+  COUNT(DISTINCT IF(
+    event_name = 'page_view' AND inq.inq_session_id IS NOT NULL,
+    session_id, NULL
+  ))                                                                   AS inquiry_cv_sessions,
 
   -- ── デバイス別 実数内訳 ────────────────────────────────────
   COUNTIF(event_name = 'page_view' AND device_category = 'desktop')    AS desktop_pageviews,
@@ -70,6 +108,7 @@ SELECT
   COUNTIF(event_name = 'page_view' AND device_category = 'tablet')     AS tablet_pageviews
 
 FROM `__ARK_PROJECT__.staging.stg_ga4_events`
+LEFT JOIN inquiry_sessions inq ON session_id = inq.inq_session_id
 WHERE page_path IS NOT NULL
   AND page_path != ''
 GROUP BY report_date, page_path

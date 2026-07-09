@@ -63,6 +63,7 @@ COLUMN_JA = {
     "page_path":                "ページパス",
     "avg_time_sec":             "平均滞在時間(秒)",
     "scroll_90pct_pct":         "スクロール90%到達率(%)",
+    "cta_click_rate_pct":       "CTAクリック率(%)",
     "conversions":              "コンバージョン数",
     "channel_grouping":         "チャネル",
     "cvr_pct":                  "CVR(%)",
@@ -251,19 +252,27 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
         """, "直近14日 期間集計（確定値）")
 
     if fetch_page:
+        # 2026-07-10 R10-C 横断整合: 週次grainの page_performance ＋ AVG(率) ＋
+        # conversions_from_page（完了ページにだけCVが立つ旧定義）は、Lookerページ別
+        # （日次grain・ratio of sums・inquiry_cv_sessions）と同名指標で数値が食い違うため、
+        # Lookerと同一の page_performance_daily × ratio of sums × 定義書準拠列に統一。
         _q(f"""
             SELECT page_path, SUM(pageviews) AS pageviews,
-                   ROUND(AVG(avg_time_on_page_sec),1) AS avg_time_sec,
-                   ROUND(AVG(scroll_90pct_rate)*100,1) AS scroll_90pct_pct,
-                   SUM(conversions_from_page) AS conversions
-            FROM `{project_id}.marts.page_performance`
+                   ROUND(SAFE_DIVIDE(SUM(avg_time_on_page_sec * pageviews), SUM(pageviews)),1) AS avg_time_sec,
+                   ROUND(SAFE_DIVIDE(SUM(scroll_90pct_count), SUM(pageviews))*100,1) AS scroll_90pct_pct,
+                   ROUND(SAFE_DIVIDE(SUM(cta_click_sessions), SUM(unique_pageviews))*100,2) AS cta_click_rate_pct,
+                   SUM(inquiry_cv_sessions) AS conversions
+            FROM `{project_id}.marts.page_performance_daily`
             GROUP BY page_path ORDER BY pageviews DESC LIMIT 15
         """, "ページ別パフォーマンス")
 
     if fetch_channel:
+        # 2026-07-10 R10-C 横断整合: CV率は定義書2026-07-09「お問い合わせ完了のみ」
+        # （inquiry_conversion_rate）に統一（Lookerチャネル別と同定義・同値）。
         _q(f"""
             SELECT report_month, channel_grouping, sessions,
-                   ROUND(conversion_rate*100,2) AS cvr_pct,
+                   inquiry_conversions AS conversions,
+                   ROUND(inquiry_conversion_rate*100,2) AS cvr_pct,
                    ROUND(engagement_rate*100,1) AS eng_rate_pct
             FROM `{project_id}.marts.channel_kpi_monthly`
             ORDER BY report_month DESC, sessions DESC
@@ -285,7 +294,9 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
         _q(f"""
             SELECT dimension_type, dimension_value,
                    SUM(sessions) AS sessions,
-                   SUM(conversions) AS conversions,
+                   -- R10-C 横断整合: CV数は定義書準拠のお問い合わせ完了のみ（inquiry_conversions）。
+                   -- Lookerのチャネル別/LP別「コンバージョン数」と同定義・同値。
+                   SUM(inquiry_conversions) AS conversions,
                    ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,1) AS eng_rate_pct
             FROM `{project_id}.marts.traffic_breakdown_daily`
             WHERE report_date >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 30 DAY)
@@ -394,6 +405,10 @@ def _ask_ai(
         "\n【利用可能なデータ範囲】\n"
         "- 日次KPI・ファネル: 直近14日 ／ ページ別: 全期間 ／ チャネル別: 月次\n"
         "- 日次KPIには 直帰率(bounce_rate_pct)・新規ユーザー率(new_user_rate_pct)・エンゲージメント率も含む\n"
+        "- ページ別の『コンバージョン数』は“そのページを閲覧して最終的にお問い合わせ完了に至った"
+        "セッション数（ページ経由CV数）”。1セッションが複数ページを閲覧して完了すると閲覧した"
+        "各ページに1ずつ計上されるため、ページ間で合算して総CV数として扱ってはいけない"
+        "（サイト全体の総数は日次KPIの問い合わせ件数を使う）\n"
         "- 流入・ページ内訳（チャネル/検索エンジン/参照元/LP/離脱ページ/デバイス/新規リピーター）: 直近30日\n"
         "- GA4→BigQueryの日次連携のため、直近1〜2日のデータは未反映\n"
         "- 渡されたデータは固定範囲(14日/30日/月次)の集計。これより前にさかのぼる任意期間の再集計はこのチャットでは不可。\n"

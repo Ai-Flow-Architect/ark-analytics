@@ -20,8 +20,14 @@ WITH event_steps AS (
     COUNTIF(event_name = 'cta_click')                                     AS step2a_cta_click_total,
 
     -- Step2b: サービスページ閲覧（/service/ 配下）
+    -- 2026-07-09 定義書答え合わせ修正: 旧 `LIKE '%/service%'` は
+    -- 別サブドメイン由来の痕跡パス（.../service_*.html 形式）まで
+    -- 部分一致で拾っていた（6月実測: 105 vs 103 の2セッション過剰）。
+    -- 定義書「サービスページ（/service/）を閲覧したセッション数」に厳密一致させるため
+    -- 先頭一致（STARTS_WITH）に変更する。
     COUNT(DISTINCT IF(
-      event_name = 'page_view' AND page_path LIKE '%/service%',
+      event_name = 'page_view'
+        AND (STARTS_WITH(page_path, '/service/') OR page_path = '/service'),
       session_id, NULL
     ))                                                                     AS step2b_service_view,
 

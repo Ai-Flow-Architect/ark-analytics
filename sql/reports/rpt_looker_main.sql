@@ -54,6 +54,7 @@ SELECT
   k.contact_form_views,
   k.contact_form_submissions,
   k.document_downloads,
+  k.document_download_sessions,
   k.appointment_bookings,
   k.total_conversions,
 
@@ -65,10 +66,22 @@ SELECT
   ROUND(k.contact_form_cr * 100, 2)          AS contact_form_cr_pct,
   ROUND(k.overall_cvr     * 100, 2)          AS overall_cvr_pct,
 
-  -- 厳密 CVR（送信のみ / 資料DLを含まない・クライアントの直観に合致）
+  -- お問い合わせCVR【定義書2026-07-09 新設項目①】
+  --   = お問い合わせ送信数 ÷ セッション数 ×100（送信のみ / 資料DLを含まない）
+  --   単日表示用。期間集計は Looker 計算フィールドで
+  --   SUM(contact_form_submissions)/SUM(sessions)*100（ratio of sums・AVG禁止）。
   ROUND(SAFE_DIVIDE(
     k.contact_form_submissions, k.sessions
   ) * 100, 2)                                AS inquiry_only_cvr_pct,
+
+  -- 資料ダウンロードCVR【定義書2026-07-09 新設項目②】
+  --   = 資料DL数 ÷ セッション数 ×100。分子はセッション単位（1セッション複数DLの膨張防止・
+  --   お問い合わせ送信数と同粒度）。現状 file_download 全期間0件のため 0.00 が正常値。
+  --   期間集計は Looker 計算フィールドで
+  --   SUM(document_download_sessions)/SUM(sessions)*100（ratio of sums・AVG禁止）。
+  ROUND(SAFE_DIVIDE(
+    k.document_download_sessions, k.sessions
+  ) * 100, 2)                                AS download_only_cvr_pct,
 
   -- ── ファネル ──────────────────────────────────────────
   f.step1_sessions          AS funnel_step1_sessions,

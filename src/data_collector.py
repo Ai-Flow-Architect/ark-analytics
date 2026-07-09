@@ -79,13 +79,19 @@ class GA4DataCollector:
         return df.iloc[0].to_dict()
 
     def get_channel_breakdown(self, target_month: str) -> pd.DataFrame:
-        """チャネル別月次内訳を返す"""
+        """チャネル別月次内訳を返す
+
+        2026-07-10 R10-C 横断整合: コンバージョン数/CV率は定義書2026-07-09
+        「お問い合わせ完了のみ」（inquiry_conversions）に統一。Lookerチャネル別と
+        同名指標・同定義・同値を保証する（旧 conversions=広義CVは資料DL計測開始後に乖離）。
+        出力キー名（conversions / conversion_rate_pct）は後方互換のため据え置き。
+        """
         query = f"""
         SELECT
           channel_grouping,
           sessions,
-          conversions,
-          ROUND(conversion_rate * 100, 2)  AS conversion_rate_pct,
+          inquiry_conversions              AS conversions,
+          ROUND(inquiry_conversion_rate * 100, 2)  AS conversion_rate_pct,
           ROUND(engagement_rate * 100, 2)  AS engagement_rate_pct
         FROM `{self.project_id}.marts.channel_kpi_monthly`
         WHERE FORMAT_DATE('%Y-%m', report_month) = @target_month
@@ -144,8 +150,14 @@ class GA4DataCollector:
           SUM(pageviews)                                                           AS pageviews,
           ROUND(SAFE_DIVIDE(SUM(avg_time_on_page_sec * pageviews), SUM(pageviews)), 1) AS avg_time_sec,
           ROUND(SAFE_DIVIDE(SUM(scroll_90pct_count), SUM(pageviews)) * 100, 1)     AS scroll_90pct_rate_pct,
-          ROUND(SAFE_DIVIDE(SUM(cta_clicks),        SUM(pageviews)) * 100, 1)      AS cta_click_rate_pct,
-          SUM(conversions_from_page)                                               AS conversions
+          -- CTAクリック率: 定義書2026-07-09準拠のセッション単位（クリックセッション÷閲覧セッション）。
+          -- 旧 SUM(cta_clicks)/SUM(pageviews)（延べ/延べ）は Lookerページ別の新定義
+          -- （cta_click_session_rate）と同名指標で数値が食い違うため統一（R10-C 横断整合）。
+          ROUND(SAFE_DIVIDE(SUM(cta_click_sessions), SUM(unique_pageviews)) * 100, 2) AS cta_click_rate_pct,
+          -- ページ経由CV数: 定義書2026-07-09準拠（そのページを閲覧し最終的にお問い合わせ完了した
+          -- セッション数 = inquiry_cv_sessions）。旧 conversions_from_page は「完了ページの行にだけ
+          -- 49件」が立つ別定義で Looker新列と乖離するため統一（R10-C 横断整合）。
+          SUM(inquiry_cv_sessions)                                                 AS conversions
         FROM `{self.project_id}.marts.page_performance_daily`
         WHERE FORMAT_DATE('%Y-%m', report_date) = @target_month
         GROUP BY page_path

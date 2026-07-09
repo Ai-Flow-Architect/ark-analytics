@@ -19,6 +19,8 @@ WITH session_base AS (
     ANY_VALUE(device_category)                                 AS device_category,
     ANY_VALUE(country)                                         AS country,
     MAX(session_engaged)                                       AS is_engaged,
+    -- GA4通番（初回セッション=1）。2026-07-09 定義書「新規/リピーター」セッション単位対応
+    MIN(ga_session_number)                                     AS ga_session_number,
 
     -- ランディングページ（最初のpage_view）
     ARRAY_AGG(
@@ -71,6 +73,10 @@ SELECT
   s.exit_page,
   s.page_view_count,
   ROUND(s.total_engagement_msec / 1000, 1)             AS session_duration_sec,
+  s.ga_session_number,
+  -- 初回セッション判定（セッション単位・GA4ネイティブ）。param欠損時はNULL
+  -- （利用側で日付粒度判定にフォールバックする）
+  IF(s.ga_session_number IS NULL, NULL, s.ga_session_number = 1) AS is_first_session,
   CAST(s.is_engaged AS BOOL)                           AS is_engaged,
   CAST(s.has_conversion AS BOOL)                       AS has_conversion,
   s.first_conversion_event

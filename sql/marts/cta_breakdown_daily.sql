@@ -26,11 +26,18 @@ WITH cta_clicks AS (
 ),
 
 -- このセッションが最終的にCVしたか（contact_finish / file_download / book_appointment）
+-- has_inquiry = お問い合わせ完了（contact_finish = /contact/?mode=finish 到達）を含むか。
+-- 定義書2026-07-09「CTA経由CV数 = CTAクリック後、お問い合わせ完了まで到達したセッション数
+-- （完了ページ到達でCVとして計測）」に準拠した分子を分離するために追加
+-- （現状 DL/予約 0件のため広義CVと同値だが、DL計測開始後に乖離する）。
 converting_sessions AS (
-  SELECT DISTINCT session_id
+  SELECT
+    session_id,
+    LOGICAL_OR(event_name = 'contact_finish') AS has_inquiry
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   WHERE is_conversion
     AND session_id IS NOT NULL
+  GROUP BY session_id
 )
 
 SELECT
@@ -44,6 +51,8 @@ SELECT
   COUNT(DISTINCT c.session_id)                                       AS click_sessions,
   COUNT(DISTINCT c.user_pseudo_id)                                   AS click_users,
   COUNT(DISTINCT IF(cv.session_id IS NOT NULL, c.session_id, NULL))  AS converting_click_sessions,
+  -- CTA経由CV数【定義書2026-07-09 準拠版・お問い合わせ完了のみ】
+  COUNT(DISTINCT IF(cv.has_inquiry, c.session_id, NULL))             AS inquiry_cv_click_sessions,
 
   -- CTAクリック後のCV到達率（素値 0.xx）
   ROUND(SAFE_DIVIDE(

@@ -40,12 +40,16 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
             contexts.append("【日次KPI（直近14日）】\n" + df.to_string(index=False))
 
     if fetch_page:
+        # 2026-07-10 R10-C 横断整合: app.py と同一（Lookerページ別と同定義）。
+        # 日次grain × ratio of sums × 定義書準拠列（cta_click_sessions/unique_pageviews/
+        # inquiry_cv_sessions）に統一し「同名指標で画面ごとに数値が違う」を防ぐ。
         df = bq_client.query(f"""
             SELECT page_path, SUM(pageviews) AS pageviews,
-                   ROUND(AVG(avg_time_on_page_sec),1) AS avg_time_sec,
-                   ROUND(AVG(scroll_90pct_rate)*100,1) AS scroll_90pct_pct,
-                   SUM(conversions_from_page) AS conversions
-            FROM `{project_id}.marts.page_performance`
+                   ROUND(SAFE_DIVIDE(SUM(avg_time_on_page_sec * pageviews), SUM(pageviews)),1) AS avg_time_sec,
+                   ROUND(SAFE_DIVIDE(SUM(scroll_90pct_count), SUM(pageviews))*100,1) AS scroll_90pct_pct,
+                   ROUND(SAFE_DIVIDE(SUM(cta_click_sessions), SUM(unique_pageviews))*100,2) AS cta_click_rate_pct,
+                   SUM(inquiry_cv_sessions) AS conversions
+            FROM `{project_id}.marts.page_performance_daily`
             GROUP BY page_path
             ORDER BY pageviews DESC LIMIT 15
         """).to_dataframe()
@@ -53,9 +57,11 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
             contexts.append("【ページ別パフォーマンス（全期間合計）】\n" + df.to_string(index=False))
 
     if fetch_channel:
+        # R10-C 横断整合: CV率は定義書準拠「お問い合わせ完了のみ」（inquiry_conversion_rate）。
         df = bq_client.query(f"""
             SELECT report_month, channel_grouping, sessions,
-                   ROUND(conversion_rate*100,2) AS cvr_pct,
+                   inquiry_conversions AS conversions,
+                   ROUND(inquiry_conversion_rate*100,2) AS cvr_pct,
                    ROUND(engagement_rate*100,1) AS eng_rate_pct
             FROM `{project_id}.marts.channel_kpi_monthly`
             ORDER BY report_month DESC, sessions DESC
@@ -112,6 +118,9 @@ class NaturalLanguageQA:
         "『お問い合わせページ到達(step3)≧フォーム入力開始(step4)≧送信完了(step5)』の区間のみ。"
         "離脱・改善余地はこの区間で評価する。\n"
         "- 全体の問い合わせ転換率は『問い合わせCVR(%)』を用いる。\n"
+        "- ページ別の『conversions（ページ経由CV数）』は“そのページを閲覧して最終的に"
+        "お問い合わせ完了に至ったセッション数”。1セッションが複数ページに計上されるため"
+        "ページ間で合算して総CV数として扱わない。\n"
         "- 回答では step1_sessions のような内部の英語カラム名をそのまま出さず、"
         "日本語のステップ名（お問い合わせページ到達、フォーム入力開始 等）で説明する。"
     )

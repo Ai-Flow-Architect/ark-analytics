@@ -37,6 +37,18 @@ WITH user_first AS (
   GROUP BY user_pseudo_id
 ),
 
+-- お問い合わせ完了（contact_finish）セッション（2026-07-09 定義書対応）。
+-- 定義書のチャネル分析「コンバージョン数 = 各チャネル経由でお問い合わせ完了した件数」は
+-- お問い合わせ完了のみが対象。既存 conversions 列（has_conversion）は
+-- file_download / book_appointment も含む広義CVのため、定義書準拠の専用列を分離する
+-- （現状は DL/予約 が0件のため両列は同値だが、DL計測開始後に乖離する）。
+inquiry_sessions AS (
+  SELECT DISTINCT session_id AS inq_session_id
+  FROM `__ARK_PROJECT__.staging.stg_ga4_events`
+  WHERE event_name = 'contact_finish'
+    AND session_id IS NOT NULL
+),
+
 sess AS (
   SELECT
     s.session_date                                    AS report_date,
@@ -44,8 +56,16 @@ sess AS (
     s.user_pseudo_id,
     s.is_engaged,
     s.has_conversion,
+    (inq.inq_session_id IS NOT NULL)                  AS has_inquiry_conversion,
     s.page_view_count,
     (s.session_date = uf.first_session_date)          AS is_new_user_session,
+    -- 新規/リピーター（セッション単位・2026-07-09 定義書対応）:
+    --   定義書「訪問（セッション）が初回だったか、2回目以降だったか」に厳密一致させるため
+    --   GA4ネイティブ ga_session_number=1 で判定（param欠損セッションのみ日付粒度に
+    --   フォールバック）。日付粒度のみだと同日2回目以降の再訪が「新規」に混入する
+    --   （2026-06実測: 新規477→442 の35セッション差）。
+    COALESCE(s.is_first_session,
+             s.session_date = uf.first_session_date)  AS is_first_session,
     s.channel_grouping,
     s.source,
     s.medium,
@@ -89,6 +109,7 @@ sess AS (
 
   FROM `__ARK_PROJECT__.staging.stg_sessions` s
   JOIN user_first uf USING (user_pseudo_id)
+  LEFT JOIN inquiry_sessions inq ON s.session_id = inq.inq_session_id
 ),
 
 exploded AS (
@@ -99,7 +120,8 @@ exploded AS (
     report_date,
     dim.dimension_type,
     dim.dimension_value,
-    session_id, user_pseudo_id, is_engaged, has_conversion, page_view_count, is_new_user_session
+    session_id, user_pseudo_id, is_engaged, has_conversion, has_inquiry_conversion,
+    page_view_count, is_new_user_session, is_first_session
   FROM sess,
   UNNEST([
     STRUCT('device'        AS dimension_type, device_label                          AS dimension_value),
@@ -108,7 +130,9 @@ exploded AS (
     STRUCT('landing_page'  AS dimension_type, landing_path                          AS dimension_value),
     STRUCT('referral'      AS dimension_type,
            IF(channel_grouping = 'Referral', COALESCE(NULLIF(source, ''), '(not set)'), NULL) AS dimension_value),
-    STRUCT('user_type'     AS dimension_type, IF(is_new_user_session, '新規', 'リピーター')   AS dimension_value),
+    -- user_type は 2026-07-09 にセッション単位判定（is_first_session）へ切替（定義書準拠）。
+    -- 旧: is_new_user_session（日付粒度・同日2回目以降も新規扱い）
+    STRUCT('user_type'     AS dimension_type, IF(is_first_session, '新規', 'リピーター')      AS dimension_value),
     STRUCT('exit_page'     AS dimension_type, exit_path                             AS dimension_value)
   ]) AS dim
   -- search_engine は Organic/Paid Search のみ・referral は Referral チャネルのみ（それ以外は NULL）
@@ -128,6 +152,10 @@ SELECT
   COUNTIF(is_engaged)                                                 AS engaged_sessions,
   SUM(page_view_count)                                                AS pageviews,
   COUNTIF(has_conversion)                                             AS conversions,
+  -- コンバージョン数【定義書2026-07-09 準拠版・お問い合わせ完了のみ】
+  --   Looker のチャネル別/LP別「コンバージョン数」「CV率」はこちらを使うこと。
+  --   CV率（期間集計）= SUM(inquiry_conversions)/SUM(sessions)*100（ratio of sums）。
+  COUNTIF(has_inquiry_conversion)                                     AS inquiry_conversions,
 
   -- ── 率（素値 0.xx・後方互換／単日参照用） ───────────────────
   ROUND(SAFE_DIVIDE(COUNTIF(is_engaged), COUNT(DISTINCT session_id)), 4)

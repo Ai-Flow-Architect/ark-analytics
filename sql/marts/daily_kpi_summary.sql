@@ -37,6 +37,11 @@ daily_events AS (
     -- 完了はセッション単位（同一セッションの重複completeを1とカウント）
     COUNT(DISTINCT IF(event_name = 'contact_finish', session_id, NULL)) AS contact_form_submissions,
     COUNTIF(event_name = 'file_download')                             AS document_downloads,
+    -- 資料DL（セッション単位・2026-07-09 定義書対応で追加）:
+    --   定義書の「お問い合わせ送信数」はセッション単位のため、資料DL CVR【新設】の分子も
+    --   セッション単位に揃えられるよう列を用意（1セッション複数DLの膨張防止）。
+    --   現状 file_download は全期間0件のため document_downloads と常に同値（将来差が出る）。
+    COUNT(DISTINCT IF(event_name = 'file_download', session_id, NULL))   AS document_download_sessions,
     COUNTIF(event_name = 'book_appointment')                          AS appointment_bookings,
     -- フォーム閲覧（=お問合せ到達）。2026-06-08 修正:
     --   旧実装は /contact の「延べページビュー数」(COUNTIF) を分母にしており、
@@ -79,6 +84,7 @@ SELECT
   e.contact_form_views,
   e.contact_form_submissions,
   e.document_downloads,
+  e.document_download_sessions,
   e.appointment_bookings,
   e.scroll_90pct_count,
   (e.contact_form_submissions + e.document_downloads + e.appointment_bookings)
