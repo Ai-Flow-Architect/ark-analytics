@@ -38,6 +38,19 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
         """).to_dataframe()
         if not df.empty:
             contexts.append("【日次KPI（直近14日）】\n" + df.to_string(index=False))
+        # 2026-07-13 検収前検証: app.py と同一の月次KPI集計を供給（今月vs先月の比較用・ratio of sums）
+        df = bq_client.query(f"""
+            SELECT FORMAT_DATE('%Y-%m', report_date) AS report_month,
+                   MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+                   SUM(sessions) AS sessions,
+                   SUM(contact_form_submissions) AS inquiries,
+                   ROUND(SAFE_DIVIDE(SUM(contact_form_submissions)+SUM(document_downloads), SUM(sessions))*100,2) AS overall_cvr_pct
+            FROM `{project_id}.marts.daily_kpi_summary`
+            WHERE report_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 2 MONTH), MONTH)
+            GROUP BY report_month ORDER BY report_month DESC
+        """).to_dataframe()
+        if not df.empty:
+            contexts.append("【月次KPI集計（直近3ヶ月・確定値／最新月は月途中まで）】\n" + df.to_string(index=False))
 
     if fetch_page:
         # 2026-07-10 R10-C 横断整合: app.py と同一（Lookerページ別と同定義）。
@@ -85,6 +98,26 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
         """).to_dataframe()
         if not df.empty:
             contexts.append("【ファネル進行状況（直近14日）】\n" + df.to_string(index=False))
+        # 2026-07-13 検収前検証: app.py と同一のファネル期間集計（確定値）を供給。
+        # AIが日次14行を自力合算して件数を誤る事故を防ぐ（率はratio of sums）。
+        df = bq_client.query(f"""
+            SELECT
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(step1_sessions) AS step1_sessions,
+              SUM(step2b_service_view) AS step2_service_view,
+              SUM(step3_contact_reach_incl) AS step3_contact_page,
+              SUM(step4_form_start_incl) AS step4_form_start,
+              SUM(step5_submission) AS step5_submission,
+              ROUND(SAFE_DIVIDE(SUM(step5_submission), SUM(step1_sessions))*100,2)          AS inquiry_cvr_pct,
+              ROUND(SAFE_DIVIDE(SUM(step4_form_start_incl), SUM(step3_contact_reach_incl))*100,2) AS step3_to4_rate_pct,
+              ROUND(SAFE_DIVIDE(SUM(step5_submission), SUM(step4_form_start_incl))*100,2)   AS step4_to5_rate_pct
+            FROM (
+              SELECT * FROM `{project_id}.marts.conversion_funnel_daily`
+              ORDER BY report_date DESC LIMIT 14
+            )
+        """).to_dataframe()
+        if not df.empty:
+            contexts.append("【ファネル直近14日 期間集計（確定値）】\n" + df.to_string(index=False))
 
     return "\n\n".join(contexts) if contexts else "（データ取得できませんでした）"
 
@@ -106,6 +139,10 @@ class NaturalLanguageQA:
         "- 改善提案がある場合は必ず1つ以上追加する\n"
         "- データにない推測・誇張はしない\n"
         "- 回答は400文字以内\n"
+        "- 期間の件数・率（ファネル各ステップ・離脱数・完了率・CVR）は"
+        "『期間集計（確定値）』の行があればその値をそのまま引用し、日次行を自分で合算しない\n"
+        "- 今月と先月の比較は『月次KPI集計』の行を使う（最新月は月途中までの集計と添える）\n"
+        "- 数値を引用するときは必ず対象期間を明記する（例: 全期間累計／直近14日／2026年6月）\n"
         "\n【ファネルの構造（重要・解釈を誤らないこと）】\n"
         "- ファネルの各ステップの数値は『そのステップに到達したセッション数』であり、"
         "前のステップを必ず通過した人数ではない。\n"

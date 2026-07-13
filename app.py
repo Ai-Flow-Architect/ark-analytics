@@ -74,6 +74,8 @@ COLUMN_JA = {
     "step4_form_start":         "Step4: フォーム入力開始",
     "step5_submission":         "Step5: フォーム送信完了",
     "inquiry_cvr_pct":          "問い合わせCVR(%)",
+    "step3_to4_rate_pct":       "お問い合わせ到達→入力開始率(%)",
+    "step4_to5_rate_pct":       "入力開始→送信完了率(%)",
     "dimension_type":           "分類軸",
     "dimension_value":          "内訳",
 }
@@ -250,6 +252,21 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
               ORDER BY report_date DESC LIMIT 14
             )
         """, "直近14日 期間集計（確定値）")
+        # 2026-07-13 検収前検証: 「今月のCVRは先月と比べて？」（サイドバー質問例）に
+        # 回答できるよう、月単位のKPI集計（直近3ヶ月・ratio of sums）を供給する。
+        # 6月行は Looker/月次レポートの確定値（788・49・6.22%）と同値になる。
+        _q(f"""
+            SELECT FORMAT_DATE('%Y-%m', report_date) AS report_month,
+                   MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+                   SUM(sessions) AS sessions, SUM(users) AS users,
+                   ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,2)       AS engagement_rate_pct,
+                   ROUND((1 - SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions)))*100,2) AS bounce_rate_pct,
+                   SUM(contact_form_submissions) AS inquiries,
+                   ROUND(SAFE_DIVIDE(SUM(contact_form_submissions)+SUM(document_downloads), SUM(sessions))*100,2) AS overall_cvr_pct
+            FROM `{project_id}.marts.daily_kpi_summary`
+            WHERE report_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 2 MONTH), MONTH)
+            GROUP BY report_month ORDER BY report_month DESC
+        """, "月次KPI集計（直近3ヶ月・確定値／最新月は月途中まで）")
 
     if fetch_page:
         # 2026-07-10 R10-C 横断整合: 週次grainの page_performance ＋ AVG(率) ＋
@@ -289,6 +306,25 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
             FROM `{project_id}.marts.conversion_funnel_daily`
             ORDER BY report_date DESC LIMIT 14
         """, "ファネル（直近14日）")
+        # 2026-07-13 検収前検証: AIが日次14行を自力合算して件数を誤る事故
+        # （実測: 送信完了8件を7件と誤算・CVR1.54%を0.98%と誤答）を防ぐため、
+        # 日次KPIと同様に期間集計の確定値行をSQL側で渡す（率はratio of sums）。
+        _q(f"""
+            SELECT
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(step1_sessions) AS step1_sessions,
+              SUM(step2b_service_view) AS step2_service_view,
+              SUM(step3_contact_reach_incl) AS step3_contact_page,
+              SUM(step4_form_start_incl) AS step4_form_start,
+              SUM(step5_submission) AS step5_submission,
+              ROUND(SAFE_DIVIDE(SUM(step5_submission), SUM(step1_sessions))*100,2)          AS inquiry_cvr_pct,
+              ROUND(SAFE_DIVIDE(SUM(step4_form_start_incl), SUM(step3_contact_reach_incl))*100,2) AS step3_to4_rate_pct,
+              ROUND(SAFE_DIVIDE(SUM(step5_submission), SUM(step4_form_start_incl))*100,2)   AS step4_to5_rate_pct
+            FROM (
+              SELECT * FROM `{project_id}.marts.conversion_funnel_daily`
+              ORDER BY report_date DESC LIMIT 14
+            )
+        """, "ファネル直近14日 期間集計（確定値）")
 
     if fetch_traffic:
         _q(f"""
@@ -399,6 +435,11 @@ def _ask_ai(
         "\n【率の期間集計ルール（重要）】\n"
         "- 直近14日の期間の数値を聞かれたら、まず『直近14日 期間集計（確定値）』の行の値をそのまま引用する。\n"
         "  日次行を自分で足し算して率を出し直さない（合算ミスの原因になる）。\n"
+        "- ファネルの期間の件数・率（各ステップ到達数、離脱数、完了率、問い合わせCVR）も同様に、\n"
+        "  必ず『ファネル直近14日 期間集計（確定値）』の行の値をそのまま引用する。\n"
+        "  日次14行を自分で合算しない。離脱数を出すときは確定値行の隣接ステップの差で計算する。\n"
+        "- 今月と先月の比較は『月次KPI集計』の行を使う（最新月は月途中までの集計であることを必ず添える）。\n"
+        "- 数値を引用するときは必ず対象期間を明記する（例: 全期間累計／直近14日／直近30日／2026年6月）。\n"
         "- 上記の確定値が無い範囲を集計するときのみ、率は日次％の単純平均ではなく\n"
         "  必ず分子と分母を合計してから割る(ratio of sums)。例: SUM(engaged_sessions)÷SUM(sessions)。\n"
         "  これがLooker Studioの数値と一致する正しい集計。\n"
@@ -409,6 +450,8 @@ def _ask_ai(
         "セッション数（ページ経由CV数）”。1セッションが複数ページを閲覧して完了すると閲覧した"
         "各ページに1ずつ計上されるため、ページ間で合算して総CV数として扱ってはいけない"
         "（サイト全体の総数は日次KPIの問い合わせ件数を使う）\n"
+        "- 『/contact/?mode=finish』は送信完了の着地ページそのものなので、"
+        "コンバージョンに貢献したページとしては挙げない\n"
         "- 流入・ページ内訳（チャネル/検索エンジン/参照元/LP/離脱ページ/デバイス/新規リピーター）: 直近30日\n"
         "- GA4→BigQueryの日次連携のため、直近1〜2日のデータは未反映\n"
         "- 渡されたデータは固定範囲(14日/30日/月次)の集計。これより前にさかのぼる任意期間の再集計はこのチャットでは不可。\n"
