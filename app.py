@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 import yaml
 import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+
+from feedback import record_feedback  # noqa: E402
 
 st.set_page_config(
     page_title="GA4 AI チャット | ARK Analytics",
@@ -140,6 +143,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pending_question" not in st.session_state:
     st.session_state.pending_question = ""
+if "sid" not in st.session_state:
+    st.session_state.sid = uuid.uuid4().hex[:12]
 
 
 # ── BQ + OpenAI 初期化（起動時1回） ────────────────────────────
@@ -553,13 +558,39 @@ BigQueryに蓄積されたGA4データをもとに、
 """)
 
 
+def _feedback_widget(idx: int, msg: dict) -> None:
+    """AI回答の下に👍👎を出し、押されたら best-effort でBQへ記録（UIは止めない）。"""
+    val = st.feedback("thumbs", key=f"fb_{idx}")
+    if val is None:
+        return
+    verdict = "up" if val == 1 else "down"
+    recorded = st.session_state.setdefault("fb_recorded", {})
+    if recorded.get(idx) == verdict:
+        return  # rerunでの二重記録を防止
+    recorded[idx] = verdict
+    try:
+        bq, _oc, project_id, cfg = _init_clients()
+        model = cfg["report"].get("openai_model", "gpt-4o")
+        ok = record_feedback(
+            bq, project_id, verdict=verdict,
+            question=msg.get("question", ""), answer=msg.get("content", ""),
+            model=model, session_id=st.session_state.get("sid", ""),
+        )
+    except Exception:
+        ok = False
+    if ok:
+        st.toast("フィードバックありがとうございます", icon="✅")
+
+
 # ── チャット履歴の表示 ──────────────────────────────────────────
-for msg in st.session_state.messages:
+for _i, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
         if msg.get("data_frames"):
             for label, df_dict in msg["data_frames"].items():
                 _render_data(label, pd.DataFrame(df_dict))
+        if msg["role"] == "assistant":
+            _feedback_widget(_i, msg)
 
 
 # ── 入力受付 ───────────────────────────────────────────────────
@@ -608,8 +639,12 @@ if question:
         st.session_state.messages.append({
             "role": "assistant",
             "content": answer,
+            "question": question,
+            "model": model,
             "data_frames": {k: v.to_dict() for k, v in data_frames.items()},
         })
+        _feedback_widget(len(st.session_state.messages) - 1,
+                         st.session_state.messages[-1])
 
 # ── フッター ────────────────────────────────────────────────────
 st.markdown("---")
