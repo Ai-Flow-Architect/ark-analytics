@@ -57,6 +57,7 @@ scripts/apply_html_fix_20260526.py
 scripts/ga4_apply_form_submit_alias.py
 scripts/gtm_apply_fix_v2.py
 scripts/gtm_dlv3_rename_publish.py
+scripts/gtm_cta_selector_fix_publish.py
 scripts/integrity_5month.py
 scripts/new_ws_publish_20260526.py
 scripts/publish_only_20260526.py
