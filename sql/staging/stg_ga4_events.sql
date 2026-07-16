@@ -74,7 +74,14 @@ SELECT
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_location') AS cta_location,
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_type')     AS cta_type,
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_purpose')  AS cta_purpose,
-  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_id')       AS cta_id,
+  -- ※ cta_id は GA4 が「数字だけの文字列」を数値型として格納するため
+  --   （data-cta-id="09" → int_value=9・string_value=NULL を実データで確認）、
+  --   string_value だけを読むと番号付きCTAが全て取りこぼされる。両方を COALESCE で拾う。
+  --   ゼロ埋め（9→"09"）は marts.cta_number_breakdown_daily 側で正規化する。
+  COALESCE(
+    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_id'),
+    CAST((SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'cta_id') AS STRING)
+  )                                                                                  AS cta_id,
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_text')     AS cta_text
 
 FROM
