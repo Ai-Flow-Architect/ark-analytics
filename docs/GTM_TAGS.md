@@ -205,7 +205,13 @@ SELECT
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_location') AS cta_location,
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_type')     AS cta_type,
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_purpose')  AS cta_purpose,
-  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_id')       AS cta_id,
+  -- 🔴 cta_id は string_value だけを読むと番号付きCTA（data-cta-id="09" 等）を全て取りこぼす。
+  --    GA4 は「数字だけの文字列」を int_value に格納する（"09" → int_value=9 / string_value=NULL）。
+  --    stg_ga4_events.sql と必ず同じ COALESCE で読むこと（切り分け時にここだけ旧式だと空振りする）。
+  COALESCE(
+    (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_id'),
+    CAST((SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'cta_id') AS STRING)
+  )                                                                               AS cta_id,
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_text')     AS cta_text,
   (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_path')    AS page_path,
   COUNT(*) AS clicks

@@ -101,6 +101,41 @@ def test_staging_extracts_cta_params():
         assert k in keys, f"stg_ga4_events.sql が CTAパラメータ '{k}' を読み取っていません"
 
 
+def test_staging_reads_cta_id_from_int_value_too():
+    """🔴 cta_id は string_value と int_value の両方から読む（2026-07-16 の実障害の再発防止）。
+
+    GA4 は「数字だけの文字列」を int_value に格納する（data-cta-id="09" → int_value=9 /
+    string_value=NULL）。string_value だけを読むと番号付きCTAを全て取りこぼし、下流の
+    cta_number_breakdown_daily が“エラーゼロで永久に0行”になる（納品直前に発見）。
+    COALESCE の int_value 枝は「冗長に見えて消される」ため、テストで固定する。
+    """
+    # コメントを剥がしてから検査する。生ファイルを見ると、int_value の行が
+    # 「冗長に見えるので」コメントアウトされた退行を緑のまま見逃す
+    # （＝この docstring が警告している当のシナリオ。2026-07-17 ミューテーション実測）。
+    sql = _strip_comments(_read(STG_EVENTS))
+    # 注意: この検査は「cta_id を読む式そのもの」を厳密一致で見る。
+    # 正規表現で COALESCE(...) AS cta_id を緩く囲うと、SQL内の別の COALESCE や
+    # 他カラム（scroll_pct 等）の int_value を拾って"恒真式の緑"になる（2026-07-17 実測）。
+    assert "value.string_value FROM UNNEST(event_params) WHERE key = 'cta_id'" in sql, (
+        "cta_id: string_value 経路が必要")
+    assert "value.int_value FROM UNNEST(event_params) WHERE key = 'cta_id'" in sql, (
+        "cta_id: int_value 経路が必要（数字だけのCTA番号は int_value に入るため。"
+        "この枝を消すと番号付きCTAが全て消え、mart が無言で0行になる）")
+
+
+def test_gtm_doc_bq_query_matches_staging_for_cta_id():
+    """docs の確認クエリが staging と同じ読み方をしている（同じ守りの2実装分裂を防ぐ）。
+
+    切り分け当日に使うクエリだけ旧 string_value 版のままだと、実際にはデータがあるのに
+    「番号が取れていない」と誤判断して切り分け時間を溶かす。
+    """
+    doc = _read(os.path.join(ROOT, "docs", "GTM_TAGS.md"))
+    assert "cta_id" in doc, "GTM_TAGS.md に cta_id の記載が必要"
+    assert "value.int_value FROM UNNEST(event_params) WHERE key = 'cta_id'" in doc, (
+        "GTM_TAGS.md のBQ確認クエリが string_value のみ＝staging と乖離している"
+        "（stg_ga4_events.sql と同じ COALESCE に揃えること）")
+
+
 # ── (11) page_performance_daily ───────────────────────────────────────────
 def test_page_performance_daily_has_raw_counts():
     """ページ別パフォーマンスの『実数併記』(11): 率だけでなく実数列が存在する。"""
