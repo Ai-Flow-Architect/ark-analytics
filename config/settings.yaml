@@ -20,9 +20,11 @@ ga4:
 kpi_targets:
   # KPI目標値のSSOT（レポート/プロンプト/通知は src/_config_loader.get_kpi_targets 経由で参照）
   # 2026-07-08 クライアント確認: お問い合わせ目標は 9→6 に変更（月次・週次共通）
+  # 2026-07-16 クライアント指定（トークルーム 15:25）: セッション5,000／資料DL50／お問い合わせ6／パートナー契約3
+  #   → 資料ダウンロード目標を 30→50 に更新（他3項目は既存値と一致）
   monthly_sessions: 5000
   monthly_inquiries: 6
-  monthly_downloads: 30
+  monthly_downloads: 50
   monthly_appointments: 6
   monthly_contracts: 3  # KGI
 

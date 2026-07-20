@@ -54,7 +54,7 @@ def get_kpi_targets(config: dict | None = None) -> dict:
     return {
         "monthly_sessions": int(targets.get("monthly_sessions", 5000)),
         "monthly_inquiries": int(targets.get("monthly_inquiries", 6)),
-        "monthly_downloads": int(targets.get("monthly_downloads", 30)),
+        "monthly_downloads": int(targets.get("monthly_downloads", 50)),
         "monthly_appointments": int(targets.get("monthly_appointments", 6)),
         "monthly_contracts": int(targets.get("monthly_contracts", 3)),
     }

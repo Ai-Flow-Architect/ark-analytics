@@ -31,11 +31,14 @@ KPI = {
 
 
 def test_settings_yaml_inquiry_target_is_6():
-    """settings.yaml のお問い合わせ目標は6件（2026-07-08 クライアント確定値）"""
+    """settings.yaml のKPI目標はクライアント確定値
+    （お問い合わせ6件=2026-07-08／セッション5,000・資料DL50件・パートナー契約3件=2026-07-16）
+    """
     targets = get_kpi_targets()
     assert targets["monthly_inquiries"] == 6
     assert targets["monthly_sessions"] == 5000
-    assert targets["monthly_downloads"] == 30
+    assert targets["monthly_downloads"] == 50
+    assert targets["monthly_contracts"] == 3
 
 
 def test_html_report_uses_config_target():
@@ -64,3 +67,42 @@ def test_executive_prompt_uses_config_target():
     assert "目標: 6件" in prompt
     assert "お問い合わせ6件" in prompt
     assert "9件" not in prompt
+
+
+# ── AIチャット2経路のKPI目標配線（2026-07-20 客様②「KPI・達成率を教えて」対応） ──
+# app.py（Streamlit=客様が触る本番）と src/natural_language_qa.py（CLI経路）は
+# コンテキスト供給が別実装。片方だけ実装すると「画面では答えるがCLIでは答えない」
+# 定義ドリフトになるため、両経路を同時に強制する（[[feedback_same_guard_two_implementations]]）。
+# ラベルは全文で照合する（前方一致だと "…_MUT" のような書き換えを素通りさせ、
+# 2経路で別ラベルになっても気付けない＝2026-07-20のミューテーション実測で確認）
+_KPI_TARGET_LABEL = "KPI目標と当月達成率（確定値・月途中）"
+
+
+def _src(rel: str) -> str:
+    path = os.path.join(os.path.dirname(__file__), "..", rel)
+    return open(path, encoding="utf-8").read()
+
+
+def test_both_chat_paths_supply_kpi_target_context():
+    """2経路とも当月達成率の確定値ブロックをBQから供給していること"""
+    for rel in ("app.py", "src/natural_language_qa.py"):
+        code = _src(rel)
+        assert _KPI_TARGET_LABEL in code, f"{rel} にKPI目標コンテキストが無い"
+        assert "get_kpi_targets" in code, f"{rel} が目標値をSSOT(get_kpi_targets)から取っていない"
+        assert "downloads_achieved_pct" in code, f"{rel} の達成率がSQL側で確定計算されていない"
+
+
+def test_chat_paths_do_not_hardcode_target_values():
+    """目標値をプロンプト/クエリに直書きしないこと（変更時に旧値が残る事故の再発防止）"""
+    for rel in ("app.py", "src/natural_language_qa.py"):
+        code = _src(rel)
+        for literal in ("monthly_sessions', 5000", "資料ダウンロード50件", "目標50件", "目標30件"):
+            assert literal not in code, f"{rel} に目標値の直書き（{literal}）がある"
+
+
+def test_chat_paths_state_kgi_contracts_not_in_ga4():
+    """KGIパートナー契約はGA4外＝推定値を出さない指示が両経路にあること"""
+    for rel in ("app.py", "src/natural_language_qa.py"):
+        code = _src(rel)
+        assert "パートナー契約" in code, f"{rel} にKGIの取扱い指示が無い"
+        assert "推定値を出さない" in code, f"{rel} にKGI推定禁止の指示が無い"

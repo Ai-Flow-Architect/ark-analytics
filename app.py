@@ -81,6 +81,13 @@ COLUMN_JA = {
     "step4_to5_rate_pct":       "入力開始→送信完了率(%)",
     "dimension_type":           "分類軸",
     "dimension_value":          "内訳",
+    "sessions_target":          "セッション数 目標",
+    "sessions_achieved_pct":    "セッション数 達成率(%)",
+    "inquiries_target":         "問い合わせ件数 目標",
+    "inquiries_achieved_pct":   "問い合わせ件数 達成率(%)",
+    "downloads":                "資料ダウンロード数",
+    "downloads_target":         "資料ダウンロード数 目標",
+    "downloads_achieved_pct":   "資料ダウンロード数 達成率(%)",
 }
 
 # 流入・ページ内訳の分類軸 日本語ラベル
@@ -204,7 +211,8 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
     fetch_page    = any(k in q for k in ["ページ", "page", "url", "スクロール", "離脱", "閲覧", "コンテンツ"])
     fetch_channel = any(k in q for k in ["チャネル", "流入", "経路", "organic", "direct", "検索"])
     fetch_funnel  = any(k in q for k in ["ファネル", "フォーム", "問い合わせ", "cv", "コンバージョン", "送信"])
-    fetch_kpi     = any(k in q for k in ["セッション", "訪問", "ユーザー", "kpi", "今月", "先月", "傾向", "エンゲージ"])
+    fetch_kpi     = any(k in q for k in ["セッション", "訪問", "ユーザー", "kpi", "今月", "先月", "傾向", "エンゲージ",
+                                        "kgi", "目標", "達成", "進捗", "ペース"])
     fetch_traffic = any(k in q for k in [
         "検索エンジン", "google", "yahoo", "bing", "リファラ", "referral", "参照",
         "流入元", "ランディング", "離脱", "デバイス", "スマホ", "モバイル", "新規", "リピー",
@@ -272,6 +280,28 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
             WHERE report_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 2 MONTH), MONTH)
             GROUP BY report_month ORDER BY report_month DESC
         """, "月次KPI集計（直近3ヶ月・確定値／最新月は月途中まで）")
+        # 2026-07-20: 客様が2026-07-16に確定提示したKPI/KGI目標値に対する当月達成率を供給。
+        # 目標値は settings.yaml kpi_targets（SSOT）から注入し、AIに暗記させない
+        # （プロンプトへ数値を直書きすると目標変更時に旧値が残る＝2026-07-08の「9件」事故の再発）。
+        # 達成率もSQL側で確定計算し、AIが実績÷目標を自力計算して誤る事故を防ぐ。
+        from src._config_loader import get_kpi_targets
+        _t = get_kpi_targets()
+        _q(f"""
+            SELECT
+              FORMAT_DATE('%Y-%m', MAX(report_date)) AS report_month,
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(sessions) AS sessions,
+              {_t['monthly_sessions']} AS sessions_target,
+              ROUND(SAFE_DIVIDE(SUM(sessions), {_t['monthly_sessions']})*100,1) AS sessions_achieved_pct,
+              SUM(contact_form_submissions) AS inquiries,
+              {_t['monthly_inquiries']} AS inquiries_target,
+              ROUND(SAFE_DIVIDE(SUM(contact_form_submissions), {_t['monthly_inquiries']})*100,1) AS inquiries_achieved_pct,
+              SUM(document_downloads) AS downloads,
+              {_t['monthly_downloads']} AS downloads_target,
+              ROUND(SAFE_DIVIDE(SUM(document_downloads), {_t['monthly_downloads']})*100,1) AS downloads_achieved_pct
+            FROM `{project_id}.marts.daily_kpi_summary`
+            WHERE report_date >= DATE_TRUNC(CURRENT_DATE('Asia/Tokyo'), MONTH)
+        """, "KPI目標と当月達成率（確定値・月途中）")
 
     if fetch_page:
         # 2026-07-10 R10-C 横断整合: 週次grainの page_performance ＋ AVG(率) ＋
@@ -448,8 +478,19 @@ def _ask_ai(
         "- 上記の確定値が無い範囲を集計するときのみ、率は日次％の単純平均ではなく\n"
         "  必ず分子と分母を合計してから割る(ratio of sums)。例: SUM(engaged_sessions)÷SUM(sessions)。\n"
         "  これがLooker Studioの数値と一致する正しい集計。\n"
+        "\n【KPI/KGI目標と達成率（2026-07-16 客様確定値）】\n"
+        "- 目標値と当月達成率は『KPI目標と当月達成率（確定値・月途中）』の行に入っている。\n"
+        "  目標値・達成率を自分で記憶・推定・再計算せず、必ずこの行の値をそのまま引用する。\n"
+        "- この行は当月1日〜直近確定日までの累計（＝月途中）なので、達成率を述べるときは\n"
+        "  必ず集計期間（期間開始〜期間終了）を添え、月末着地の予測と混同しない。\n"
+        "  月末ペースに言及する場合は『このペースが続いた場合の単純換算』と明示する。\n"
+        "- KGI『パートナー契約数（月3件）』はGA4に含まれない社内成果指標のため、"
+        "このチャットでは実績を算出できない。問われたら目標値の存在のみ伝え、"
+        "『契約数は御社側の実績値との突合が必要』と案内する（推定値を出さない）。\n"
+        "- 上記の行が渡されていない質問では、目標値を推測して答えない。\n"
         "\n【利用可能なデータ範囲】\n"
         "- 日次KPI・ファネル: 直近14日 ／ ページ別: 全期間 ／ チャネル別: 月次\n"
+        "- KPI目標と達成率: 当月（1日〜直近確定日）\n"
         "- 日次KPIには 直帰率(bounce_rate_pct)・新規ユーザー率(new_user_rate_pct)・エンゲージメント率も含む\n"
         "- ページ別の『コンバージョン数』は“そのページを閲覧して最終的にお問い合わせ完了に至った"
         "セッション数（ページ経由CV数）”。1セッションが複数ページを閲覧して完了すると閲覧した"

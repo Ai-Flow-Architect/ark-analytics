@@ -11,7 +11,12 @@ from openai import OpenAI
 from google.cloud import bigquery
 
 
-from src._config_loader import get_project_id, load_config as _load_config, make_bq_client
+from src._config_loader import (
+    get_kpi_targets,
+    get_project_id,
+    load_config as _load_config,
+    make_bq_client,
+)
 
 
 # 質問の意図からどのBQテーブルを引くかを決定する関数群
@@ -23,7 +28,8 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
     fetch_page = any(k in q for k in ["ページ", "page", "url", "コンテンツ", "記事", "スクロール", "離脱", "閲覧"])
     fetch_channel = any(k in q for k in ["チャネル", "流入", "経路", "organic", "direct", "検索", "参照"])
     fetch_funnel = any(k in q for k in ["ファネル", "フォーム", "問い合わせ", "cv", "コンバージョン", "送信"])
-    fetch_kpi = any(k in q for k in ["セッション", "訪問", "ユーザー", "kpi", "目標", "今月", "先月", "傾向"])
+    fetch_kpi = any(k in q for k in ["セッション", "訪問", "ユーザー", "kpi", "目標", "今月", "先月", "傾向",
+                                     "kgi", "達成", "進捗", "ペース"])
 
     contexts = []
 
@@ -51,6 +57,28 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
         """).to_dataframe()
         if not df.empty:
             contexts.append("【月次KPI集計（直近3ヶ月・確定値／最新月は月途中まで）】\n" + df.to_string(index=False))
+        # 2026-07-20: 客様確定KPI目標（settings.yaml kpi_targets＝SSOT）に対する当月達成率。
+        # app.py と同一定義（片経路だけ実装すると「画面で答えられる質問がCLIで答えられない」
+        # 定義ドリフトになる＝tests/test_kpi_targets.py が両経路を強制）。
+        t = get_kpi_targets()
+        df = bq_client.query(f"""
+            SELECT
+              FORMAT_DATE('%Y-%m', MAX(report_date)) AS report_month,
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(sessions) AS sessions,
+              {t['monthly_sessions']} AS sessions_target,
+              ROUND(SAFE_DIVIDE(SUM(sessions), {t['monthly_sessions']})*100,1) AS sessions_achieved_pct,
+              SUM(contact_form_submissions) AS inquiries,
+              {t['monthly_inquiries']} AS inquiries_target,
+              ROUND(SAFE_DIVIDE(SUM(contact_form_submissions), {t['monthly_inquiries']})*100,1) AS inquiries_achieved_pct,
+              SUM(document_downloads) AS downloads,
+              {t['monthly_downloads']} AS downloads_target,
+              ROUND(SAFE_DIVIDE(SUM(document_downloads), {t['monthly_downloads']})*100,1) AS downloads_achieved_pct
+            FROM `{project_id}.marts.daily_kpi_summary`
+            WHERE report_date >= DATE_TRUNC(CURRENT_DATE('Asia/Tokyo'), MONTH)
+        """).to_dataframe()
+        if not df.empty:
+            contexts.append("【KPI目標と当月達成率（確定値・月途中）】\n" + df.to_string(index=False))
 
     if fetch_page:
         # 2026-07-10 R10-C 横断整合: app.py と同一（Lookerページ別と同定義）。
@@ -143,6 +171,13 @@ class NaturalLanguageQA:
         "『期間集計（確定値）』の行があればその値をそのまま引用し、日次行を自分で合算しない\n"
         "- 今月と先月の比較は『月次KPI集計』の行を使う（最新月は月途中までの集計と添える）\n"
         "- 数値を引用するときは必ず対象期間を明記する（例: 全期間累計／直近14日／2026年6月）\n"
+        "\n【KPI/KGI目標と達成率（2026-07-16 客様確定値）】\n"
+        "- 目標値と当月達成率は『KPI目標と当月達成率（確定値・月途中）』の行の値をそのまま引用し、"
+        "目標値を自分で記憶・推定・再計算しない\n"
+        "- この行は当月1日〜直近確定日の累計（月途中）＝達成率には必ず集計期間を添え、"
+        "月末着地の予測と混同しない（ペースに触れる場合は単純換算と明示する）\n"
+        "- KGI『パートナー契約数（月3件）』はGA4に含まれない社内成果指標のため実績を算出できない。"
+        "問われたら目標値の存在のみ伝え、御社実績との突合が必要と案内する（推定値を出さない）\n"
         "\n【客様の正式指標定義（アーク事業部 定義書準拠・必ずこの定義で回答する）】\n"
         "- セッション数 ＝ 全ページ訪問回数（GA4セッション数）\n"
         "- お問い合わせ送信数 ＝ 完了ページ(/contact/?mode=finish)に到達したセッション数\n"
