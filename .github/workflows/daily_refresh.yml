@@ -7,7 +7,21 @@ name: Daily BQ Refresh
 on:
   schedule:
     # 毎日 19:00 UTC = 翌日 JST AM 4:00（旧cron `0 4 * * *` 相当）
+    #   この回は下流ジョブの前提。動かさないこと:
+    #     health_check     JST 06:00「daily_refresh の2時間後」
+    #     weekly_report    月曜 JST 09:00 ／ monthly_report 3日 JST 09:00
+    #   これらは「朝9時までに当日分のmartが出来ている」前提で走る。
     - cron: '0 19 * * *'
+    # 2026-07-20 追加: 毎日 03:00 UTC = JST 12:00
+    #   GA4のdailyエクスポートがBQへ着地するのは「翌日 JST 08:31〜11:04」
+    #   （直近30日を `__TABLES__.last_modified_time` で実測。最遅 6/22 11:04）。
+    #   AM4:00の回は 30日中30日とも着地前に走っており、最新日が必ず1日遅れて
+    #   martへ入っていた（ジョブは毎回 success ＝「成功≠成果物最新」）。
+    #   最遅着地の56分後にあたる JST 12:00 に2回目を足し、当日中に最新日を取り込む。
+    #   移動でなく追加にした理由: 移動すると上記3ジョブが更新前に走る（Looker鮮度を直す
+    #   代わりに客様へ届く週次・月次レポートが1日古くなる）。
+    #   marts は CREATE OR REPLACE の全再構築＝冪等なので、2回走っても二重計上しない。
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 permissions:
