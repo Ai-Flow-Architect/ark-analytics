@@ -33,7 +33,7 @@ WITH cta_clicks AS (
 converting_sessions AS (
   SELECT
     session_id,
-    LOGICAL_OR(event_name = 'contact_finish') AS has_inquiry
+    LOGICAL_OR(conversion_type = 'inquiry') AS has_inquiry  -- 2026-07-23: /document/の資料DL(contact_finish)はconversion_typeで除外
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   WHERE is_conversion
     AND session_id IS NOT NULL

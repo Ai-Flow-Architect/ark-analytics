@@ -43,8 +43,8 @@ WITH event_steps AS (
     -- Step4: フォーム入力開始（form_start イベント）
     COUNT(DISTINCT IF(event_name = 'form_start', session_id, NULL))       AS step4_form_start,
 
-    -- Step5: フォーム送信完了（contact_finish）
-    COUNT(DISTINCT IF(event_name = 'contact_finish', session_id, NULL))   AS step5_submission,
+    -- Step5: フォーム送信完了（conversion_type='inquiry'＝/contact/ の contact_finish。資料DL=/document/ は step5b へ分離）
+    COUNT(DISTINCT IF(conversion_type = 'inquiry', session_id, NULL))     AS step5_submission,
 
     -- ── 単調ファネル用 包含定義（2026-06-03 追加・主ファネル正本） ──────────
     -- 独立カウントの step3/step4/step5 は「お問合せ到達<入力開始」等の非単調逆転や
@@ -55,18 +55,18 @@ WITH event_steps AS (
     COUNT(DISTINCT IF(
       (event_name = 'page_view' AND (page_path LIKE '%/contact%' OR page_path LIKE '%/inquiry%'))
       OR event_name = 'form_start'
-      OR event_name = 'contact_finish',
+      OR conversion_type = 'inquiry',
       session_id, NULL
     ))                                                                     AS step3_contact_reach_incl,
 
-    -- フォーム入力開始(incl) = form_start または contact_finish（完了は必ず開始を内包）
+    -- フォーム入力開始(incl) = form_start または inquiry完了（完了は必ず開始を内包・資料DLの/document/は除外）
     COUNT(DISTINCT IF(
-      event_name IN ('form_start', 'contact_finish'),
+      (event_name = 'form_start' OR conversion_type = 'inquiry'),
       session_id, NULL
     ))                                                                     AS step4_form_start_incl,
 
-    -- Step6: 資料DL（並行CVルート）
-    COUNT(DISTINCT IF(event_name = 'file_download', session_id, NULL))    AS step5b_download
+    -- Step6: 資料DL（並行CVルート・conversion_type='document_dl'＝/document/ の contact_finish）
+    COUNT(DISTINCT IF(conversion_type = 'document_dl', session_id, NULL)) AS step5b_download
 
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   GROUP BY event_date

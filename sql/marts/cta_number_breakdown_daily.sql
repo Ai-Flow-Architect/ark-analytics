@@ -1,5 +1,6 @@
 -- marts.cta_number_breakdown_daily
--- CTAボタン「番号別（data-cta-id 01〜19）」の内訳・日次
+-- CTAボタン「番号別（data-cta-id 01〜21）」の内訳・日次
+--   ※ 20/21 は 2026-07-23 client 追加の会社概要ページ(/aboutus/)専用番号。
 --   クライアント要望（2026-07-14）: 同一文言のボタン（ヘッダー/フッターの
 --   「お問い合わせ」など）を取り違えなく、付与された番号どおり正確に計測する。
 --
@@ -48,7 +49,13 @@ cta_number_master AS (
     STRUCT('16', 'パートナー制度', '/partner-program/', '本文',          '資料ダウンロード'),
     STRUCT('17', 'パートナー制度', '/partner-program/', '本文',          'お問い合わせ'),
     STRUCT('18', 'Q&A',          '/faq/',        '本文',                '資料ダウンロード'),
-    STRUCT('19', 'Q&A',          '/faq/',        '本文',                'お問い合わせ')
+    STRUCT('19', 'Q&A',          '/faq/',        '本文',                'お問い合わせ'),
+    -- 2026-07-23 client追加: 会社概要ページ(/aboutus/)専用の資料DL/お問い合わせ。
+    --   従来 /aboutus/ の下部CTAは 07/08（TOP最下部と共用の再利用コンポーネント）で
+    --   計上されていたが、client がサイト側で 20/21 に付け替える方針（本ページ専用に分離）。
+    --   サイト側の data-cta-id 変更後、本行により /aboutus/ のクリックが 20/21 として計上される。
+    STRUCT('20', '会社概要',      '/aboutus/',    '最下部',              '資料ダウンロード'),
+    STRUCT('21', '会社概要',      '/aboutus/',    '最下部',              'お問い合わせ')
   ])
 ),
 
@@ -75,7 +82,7 @@ cta_clicks AS (
 converting_sessions AS (
   SELECT
     session_id,
-    LOGICAL_OR(event_name = 'contact_finish') AS has_inquiry
+    LOGICAL_OR(conversion_type = 'inquiry') AS has_inquiry  -- 2026-07-23: /document/の資料DL(contact_finish)はconversion_typeで除外
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   WHERE is_conversion
     AND session_id IS NOT NULL

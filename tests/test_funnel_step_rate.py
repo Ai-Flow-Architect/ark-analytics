@@ -104,13 +104,21 @@ def test_conversion_funnel_daily_uses_correct_event_names():
     assert "event_name = 'scroll'" not in sql, "誤った event_name 'scroll' が残存"
     assert "event_name = 'click'" not in sql, "誤った event_name 'click' が残存"
     # 必須の正規名で集計していること
-    required_events = ["cta_click", "form_start", "contact_finish"]
+    required_events = ["cta_click", "form_start"]
     for ev in required_events:
         pattern = f"event_name = '{ev}'"
         assert pattern in sql, (
             f"conversion_funnel_daily.sql に '{pattern}' が見つかりません。"
             f"GTM 正規イベント名で集計してください。"
         )
+    # 2026-07-23 客様③: お問い合わせ完了(step5)は conversion_type='inquiry'（/document/ の
+    # 資料DL=contact_finish を除外）、資料DL(step5b)は conversion_type='document_dl' で集計する。
+    assert "conversion_type = 'inquiry'" in sql, (
+        "step5_submission は conversion_type='inquiry' で集計（/document/ の資料DLを混ぜない）"
+    )
+    assert "conversion_type = 'document_dl'" in sql, (
+        "step5b_download は conversion_type='document_dl' で集計する"
+    )
 
 
 def test_rpt_looker_main_uses_safe_divide_for_rates():

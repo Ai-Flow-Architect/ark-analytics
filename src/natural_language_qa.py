@@ -19,10 +19,92 @@ from src._config_loader import (
 )
 
 
+# ── 期間指定質問の標準期間窓（客様⑤対応 2026-07-23）─────────────
+# 「直近30日／今月／先月」の期間指定質問に、その期間の確定集計値で回答する。
+# 直近14日は既存ブロック（確定日ベース LIMIT 14）をそのまま維持し、ここでは
+# 追加3窓のみ定義する。タプル: (名前, WHERE句(JST), 発火キーワード, ラベル注記)。
+# ※ app.py / src/natural_language_qa.py の2実装に同一定義を置く
+#   （同一性は tests/test_period_windows_parity.py がASTで強制する）。
+PERIOD_WINDOWS = (
+    (
+        "直近30日",
+        "report_date >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 29 DAY)",
+        ("30日", "３０日"),
+        "確定値",
+    ),
+    (
+        "今月",
+        "report_date >= DATE_TRUNC(CURRENT_DATE('Asia/Tokyo'), MONTH)",
+        ("今月",),
+        "確定値・月初〜直近確定日",
+    ),
+    (
+        "先月",
+        "report_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 1 MONTH), MONTH)"
+        " AND report_date < DATE_TRUNC(CURRENT_DATE('Asia/Tokyo'), MONTH)",
+        ("先月", "前月"),
+        "確定値・前月1日〜末日",
+    ),
+)
+
+
+def _requested_period_windows(question_lower: str) -> list:
+    """質問文に期間語（30日/今月/先月等）が含まれる標準期間窓だけを返す。
+
+    期間語が無い質問では空リスト＝既存挙動（直近14日中心）を維持し、
+    コンテキストのトークン肥大を避ける。
+    """
+    return [
+        (name, where_sql, suffix)
+        for name, where_sql, keywords, suffix in PERIOD_WINDOWS
+        if any(k in question_lower for k in keywords)
+    ]
+
+
+def _period_kpi_sql(project_id: str, where_sql: str) -> str:
+    """期間指定KPIの確定値SQL（率はratio of sums＝Looker真値定義と一致・AVG禁止）。
+
+    HAVING COUNT(*) > 0: 該当期間に行が無いときNULLだけの1行を供給しない空ガード。
+    """
+    return f"""
+            SELECT
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(sessions) AS sessions, SUM(users) AS users,
+              ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,2)        AS engagement_rate_pct,
+              ROUND((1 - SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions)))*100,2)  AS bounce_rate_pct,
+              ROUND(SAFE_DIVIDE(SUM(new_users), SUM(users))*100,2)                  AS new_user_rate_pct,
+              SUM(contact_form_submissions) AS inquiries,
+              ROUND(SAFE_DIVIDE(SUM(contact_form_submissions)+SUM(document_downloads), SUM(sessions))*100,2) AS overall_cvr_pct
+            FROM `{project_id}.marts.daily_kpi_summary`
+            WHERE {where_sql}
+            HAVING COUNT(*) > 0
+    """
+
+
+def _period_funnel_sql(project_id: str, where_sql: str) -> str:
+    """期間指定ファネルの確定値SQL（包含定義incl列・率はratio of sums・AVG禁止）。"""
+    return f"""
+            SELECT
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(step1_sessions) AS step1_sessions,
+              SUM(step2b_service_view) AS step2_service_view,
+              SUM(step3_contact_reach_incl) AS step3_contact_page,
+              SUM(step4_form_start_incl) AS step4_form_start,
+              SUM(step5_submission) AS step5_submission,
+              ROUND(SAFE_DIVIDE(SUM(step5_submission), SUM(step1_sessions))*100,2)          AS inquiry_cvr_pct,
+              ROUND(SAFE_DIVIDE(SUM(step4_form_start_incl), SUM(step3_contact_reach_incl))*100,2) AS step3_to4_rate_pct,
+              ROUND(SAFE_DIVIDE(SUM(step5_submission), SUM(step4_form_start_incl))*100,2)   AS step4_to5_rate_pct
+            FROM `{project_id}.marts.conversion_funnel_daily`
+            WHERE {where_sql}
+            HAVING COUNT(*) > 0
+    """
+
+
 # 質問の意図からどのBQテーブルを引くかを決定する関数群
 def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str) -> str:
     """質問内容に応じてBQからコンテキストデータを取得"""
     q = question.lower()
+    period_windows = _requested_period_windows(q)
 
     # キーワードマッピング
     fetch_page = any(k in q for k in ["ページ", "page", "url", "コンテンツ", "記事", "スクロール", "離脱", "閲覧"])
@@ -44,6 +126,12 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
         """).to_dataframe()
         if not df.empty:
             contexts.append("【日次KPI（直近14日）】\n" + df.to_string(index=False))
+        # 2026-07-23 客様⑤: 期間指定質問（直近30日/今月/先月）に確定集計値で回答するため、
+        # 質問に期間語がある時だけ該当窓の期間集計を供給する（app.py と同一定義）。
+        for name, where_sql, suffix in period_windows:
+            df = bq_client.query(_period_kpi_sql(project_id, where_sql)).to_dataframe()
+            if not df.empty:
+                contexts.append(f"【{name} 期間集計（{suffix}）】\n" + df.to_string(index=False))
         # 2026-07-13 検収前検証: app.py と同一の月次KPI集計を供給（今月vs先月の比較用・ratio of sums）
         df = bq_client.query(f"""
             SELECT FORMAT_DATE('%Y-%m', report_date) AS report_month,
@@ -146,6 +234,11 @@ def _get_context_data(question: str, bq_client: bigquery.Client, project_id: str
         """).to_dataframe()
         if not df.empty:
             contexts.append("【ファネル直近14日 期間集計（確定値）】\n" + df.to_string(index=False))
+        # 2026-07-23 客様⑤: 期間指定質問にはファネルも該当窓の確定集計を供給（app.py と同一定義）。
+        for name, where_sql, suffix in period_windows:
+            df = bq_client.query(_period_funnel_sql(project_id, where_sql)).to_dataframe()
+            if not df.empty:
+                contexts.append(f"【ファネル{name} 期間集計（{suffix}）】\n" + df.to_string(index=False))
 
     return "\n\n".join(contexts) if contexts else "（データ取得できませんでした）"
 
@@ -171,6 +264,18 @@ class NaturalLanguageQA:
         "『期間集計（確定値）』の行があればその値をそのまま引用し、日次行を自分で合算しない\n"
         "- 今月と先月の比較は『月次KPI集計』の行を使う（最新月は月途中までの集計と添える）\n"
         "- 数値を引用するときは必ず対象期間を明記する（例: 全期間累計／直近14日／2026年6月）\n"
+        "\n【期間指定質問への回答（直近14日／直近30日／今月／先月）】\n"
+        "- 『直近30日』『今月』『先月』と期間を指定された質問には、その期間の"
+        "『期間集計（確定値…）』ブロックの値をそのまま引用して答える\n"
+        "  （KPIは『直近30日 期間集計（確定値）』『今月 期間集計（確定値・月初〜直近確定日）』"
+        "『先月 期間集計（確定値・前月1日〜末日）』、ファネルは『ファネル直近30日 期間集計（確定値）』等）。\n"
+        "  日次行や別期間のブロックから自分で再集計しない。\n"
+        "- 『今月』は月初〜直近確定日まで（月途中）の集計＝回答に必ずその旨を添える。"
+        "『先月』は前月1日〜末日の確定集計。\n"
+        "- 今月と先月の比較は『月次KPI集計』の行を使ってよい（期間ブロックと同一定義・同値）。\n"
+        "- 期間を指定されたのに該当する期間集計ブロックが渡されていない場合は、"
+        "他期間の値を流用せず『その期間の確定値が今回のデータに含まれていない』と明示し、"
+        "質問文に『直近30日』『今月』『先月』のいずれかの語を含めて再質問するよう案内する。\n"
         "\n【KPI/KGI目標と達成率（2026-07-16 客様確定値）】\n"
         "- 目標値と当月達成率は『KPI目標と当月達成率（確定値・月途中）』の行の値をそのまま引用し、"
         "目標値を自分で記憶・推定・再計算しない\n"

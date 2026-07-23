@@ -35,14 +35,14 @@ daily_events AS (
   SELECT
     event_date                                                         AS report_date,
     -- 完了はセッション単位（同一セッションの重複completeを1とカウント）
-    COUNT(DISTINCT IF(event_name = 'contact_finish', session_id, NULL)) AS contact_form_submissions,
-    COUNTIF(event_name = 'file_download')                             AS document_downloads,
+    COUNT(DISTINCT IF(conversion_type = 'inquiry', session_id, NULL)) AS contact_form_submissions,
+    COUNTIF(conversion_type = 'document_dl')                          AS document_downloads,
     -- 資料DL（セッション単位・2026-07-09 定義書対応で追加）:
     --   定義書の「お問い合わせ送信数」はセッション単位のため、資料DL CVR【新設】の分子も
     --   セッション単位に揃えられるよう列を用意（1セッション複数DLの膨張防止）。
-    --   現状 file_download は全期間0件のため document_downloads と常に同値（将来差が出る）。
-    COUNT(DISTINCT IF(event_name = 'file_download', session_id, NULL))   AS document_download_sessions,
-    COUNTIF(event_name = 'book_appointment')                          AS appointment_bookings,
+    --   資料DLは contact_finish(/document/) 由来・1セッション1イベントのため現状 document_downloads と同値。
+    COUNT(DISTINCT IF(conversion_type = 'document_dl', session_id, NULL)) AS document_download_sessions,
+    COUNTIF(conversion_type = 'appointment')                          AS appointment_bookings,
     -- フォーム閲覧（=お問合せ到達）。2026-06-08 修正:
     --   旧実装は /contact の「延べページビュー数」(COUNTIF) を分母にしており、
     --   分子(完了=セッション単位)と粒度が不一致 → contact_form_cr が実態の約半分(19%)に
@@ -52,7 +52,7 @@ daily_events AS (
     COUNT(DISTINCT IF(
       (event_name = 'page_view' AND (page_path LIKE '%/contact%' OR page_path LIKE '%/inquiry%'))
       OR event_name = 'form_start'
-      OR event_name = 'contact_finish',
+      OR conversion_type = 'inquiry',
       session_id, NULL
     ))                                                                 AS contact_form_views,
     -- スクロール90%到達。2026-06-08 修正: custom scroll_depth は深度値未送出のため

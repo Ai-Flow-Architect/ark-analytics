@@ -54,9 +54,28 @@ SELECT
   -- コンバージョン判定（実際のイベント名に合わせて定義）
   event_name IN (
     'contact_finish',    -- お問い合わせ送信完了（実装済みカスタムイベント）
-    'file_download',     -- 資料DL（未実装・将来追加予定）
+    'file_download',     -- 資料DL（旧定義・全期間0件。実際の資料DLは contact_finish + /document/ = conversion_type で分類）
     'book_appointment'   -- 相談申込（未実装・将来追加予定）
   )                                                                                  AS is_conversion,
+
+  -- コンバージョン種別（2026-07-23 客様③「資料DLが計測されない」対応で追加）:
+  --   資料DLフォーム（/document/#mailform）の送信完了は file_download ではなく、
+  --   お問い合わせと同じ contact_finish イベントで発火する（本番実データで確認:
+  --   file_download は全期間0件・contact_finish は page_location='.../document/?mode=finish'
+  --   の行が存在。page_location の分布は /contact/ と /document/ の2種のみで NULL なし）。
+  --   イベント名だけでは両者を区別できないため、page_location で種別を一元分類する。
+  --   marts 側の「お問い合わせ」「資料DL」集計は必ず本列を参照すること
+  --   （event_name = 'contact_finish' / 'file_download' の直接判定は二重定義＝定義ズレの温床）。
+  --   ※ is_conversion（広義CV=何らかのCVか）は従来定義のまま不変（資料DLもCVに含むため）。
+  CASE
+    WHEN event_name = 'contact_finish'
+      AND (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location')
+          LIKE '%/document/%'                THEN 'document_dl'  -- 資料DL送信完了（/document/?mode=finish）
+    WHEN event_name = 'contact_finish'       THEN 'inquiry'      -- お問い合わせ送信完了（/contact/?mode=finish）
+    WHEN event_name = 'file_download'        THEN 'document_dl'  -- 旧定義の資料DL経路（全期間0件・発火時も同カテゴリへ合流）
+    WHEN event_name = 'book_appointment'     THEN 'appointment'  -- 相談申込（未実装・将来追加予定）
+    ELSE NULL
+  END                                                                                AS conversion_type,
 
   -- スクロール深度。2026-06-08 修正:
   --   GTM custom タグ① scroll_depth は event_params に深度値(scroll_pct)を送出できておらず

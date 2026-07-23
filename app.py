@@ -41,7 +41,8 @@ EXAMPLE_QUESTIONS = {
     ],
     "📈 KPI確認": [
         "今月のセッション数の傾向はどうですか？",
-        "先週のエンゲージメント率を教えてください",
+        "直近30日のセッション数とCVRを教えてください",
+        "先月のお問い合わせ件数は何件でしたか？",
         "今週の改善ポイントをまとめてください",
     ],
 }
@@ -100,6 +101,87 @@ DIMENSION_TYPE_JA = {
     "device":        "デバイス",
     "user_type":     "新規/リピーター",
 }
+
+
+# ── 期間指定質問の標準期間窓（客様⑤対応 2026-07-23）─────────────
+# 「直近30日／今月／先月」の期間指定質問に、その期間の確定集計値で回答する。
+# 直近14日は既存ブロック（確定日ベース LIMIT 14）をそのまま維持し、ここでは
+# 追加3窓のみ定義する。タプル: (名前, WHERE句(JST), 発火キーワード, ラベル注記)。
+# ※ app.py / src/natural_language_qa.py の2実装に同一定義を置く
+#   （同一性は tests/test_period_windows_parity.py がASTで強制する）。
+PERIOD_WINDOWS = (
+    (
+        "直近30日",
+        "report_date >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 29 DAY)",
+        ("30日", "３０日"),
+        "確定値",
+    ),
+    (
+        "今月",
+        "report_date >= DATE_TRUNC(CURRENT_DATE('Asia/Tokyo'), MONTH)",
+        ("今月",),
+        "確定値・月初〜直近確定日",
+    ),
+    (
+        "先月",
+        "report_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 1 MONTH), MONTH)"
+        " AND report_date < DATE_TRUNC(CURRENT_DATE('Asia/Tokyo'), MONTH)",
+        ("先月", "前月"),
+        "確定値・前月1日〜末日",
+    ),
+)
+
+
+def _requested_period_windows(question_lower: str) -> list:
+    """質問文に期間語（30日/今月/先月等）が含まれる標準期間窓だけを返す。
+
+    期間語が無い質問では空リスト＝既存挙動（直近14日中心）を維持し、
+    コンテキストのトークン肥大を避ける。
+    """
+    return [
+        (name, where_sql, suffix)
+        for name, where_sql, keywords, suffix in PERIOD_WINDOWS
+        if any(k in question_lower for k in keywords)
+    ]
+
+
+def _period_kpi_sql(project_id: str, where_sql: str) -> str:
+    """期間指定KPIの確定値SQL（率はratio of sums＝Looker真値定義と一致・AVG禁止）。
+
+    HAVING COUNT(*) > 0: 該当期間に行が無いときNULLだけの1行を供給しない空ガード。
+    """
+    return f"""
+            SELECT
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(sessions) AS sessions, SUM(users) AS users,
+              ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,2)        AS engagement_rate_pct,
+              ROUND((1 - SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions)))*100,2)  AS bounce_rate_pct,
+              ROUND(SAFE_DIVIDE(SUM(new_users), SUM(users))*100,2)                  AS new_user_rate_pct,
+              SUM(contact_form_submissions) AS inquiries,
+              ROUND(SAFE_DIVIDE(SUM(contact_form_submissions)+SUM(document_downloads), SUM(sessions))*100,2) AS overall_cvr_pct
+            FROM `{project_id}.marts.daily_kpi_summary`
+            WHERE {where_sql}
+            HAVING COUNT(*) > 0
+    """
+
+
+def _period_funnel_sql(project_id: str, where_sql: str) -> str:
+    """期間指定ファネルの確定値SQL（包含定義incl列・率はratio of sums・AVG禁止）。"""
+    return f"""
+            SELECT
+              MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+              SUM(step1_sessions) AS step1_sessions,
+              SUM(step2b_service_view) AS step2_service_view,
+              SUM(step3_contact_reach_incl) AS step3_contact_page,
+              SUM(step4_form_start_incl) AS step4_form_start,
+              SUM(step5_submission) AS step5_submission,
+              ROUND(SAFE_DIVIDE(SUM(step5_submission), SUM(step1_sessions))*100,2)          AS inquiry_cvr_pct,
+              ROUND(SAFE_DIVIDE(SUM(step4_form_start_incl), SUM(step3_contact_reach_incl))*100,2) AS step3_to4_rate_pct,
+              ROUND(SAFE_DIVIDE(SUM(step5_submission), SUM(step4_form_start_incl))*100,2)   AS step4_to5_rate_pct
+            FROM `{project_id}.marts.conversion_funnel_daily`
+            WHERE {where_sql}
+            HAVING COUNT(*) > 0
+    """
 
 
 def _ja(df: pd.DataFrame) -> pd.DataFrame:
@@ -208,6 +290,7 @@ def _init_clients():
 # ── BQ データ取得 ───────────────────────────────────────────────
 def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
     q = question.lower()
+    period_windows = _requested_period_windows(q)
     fetch_page    = any(k in q for k in ["ページ", "page", "url", "スクロール", "離脱", "閲覧", "コンテンツ"])
     fetch_channel = any(k in q for k in ["チャネル", "流入", "経路", "organic", "direct", "検索"])
     fetch_funnel  = any(k in q for k in ["ファネル", "フォーム", "問い合わせ", "cv", "コンバージョン", "送信"])
@@ -265,6 +348,10 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
               ORDER BY report_date DESC LIMIT 14
             )
         """, "直近14日 期間集計（確定値）")
+        # 2026-07-23 客様⑤: 期間指定質問（直近30日/今月/先月）に確定集計値で回答するため、
+        # 質問に期間語がある時だけ該当窓の期間集計を供給する（トークン肥大の回避）。
+        for name, where_sql, suffix in period_windows:
+            _q(_period_kpi_sql(project_id, where_sql), f"{name} 期間集計（{suffix}）")
         # 2026-07-13 検収前検証: 「今月のCVRは先月と比べて？」（サイドバー質問例）に
         # 回答できるよう、月単位のKPI集計（直近3ヶ月・ratio of sums）を供給する。
         # 6月行は Looker/月次レポートの確定値（788・49・6.22%）と同値になる。
@@ -360,6 +447,9 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
               ORDER BY report_date DESC LIMIT 14
             )
         """, "ファネル直近14日 期間集計（確定値）")
+        # 2026-07-23 客様⑤: 期間指定質問にはファネルも該当窓の確定集計を供給する。
+        for name, where_sql, suffix in period_windows:
+            _q(_period_funnel_sql(project_id, where_sql), f"ファネル{name} 期間集計（{suffix}）")
 
     if fetch_traffic:
         _q(f"""
@@ -478,6 +568,18 @@ def _ask_ai(
         "- 上記の確定値が無い範囲を集計するときのみ、率は日次％の単純平均ではなく\n"
         "  必ず分子と分母を合計してから割る(ratio of sums)。例: SUM(engaged_sessions)÷SUM(sessions)。\n"
         "  これがLooker Studioの数値と一致する正しい集計。\n"
+        "\n【期間指定質問への回答（直近14日／直近30日／今月／先月）】\n"
+        "- 『直近30日』『今月』『先月』と期間を指定された質問には、その期間の"
+        "『期間集計（確定値…）』ブロックの値をそのまま引用して答える\n"
+        "  （KPIは『直近30日 期間集計（確定値）』『今月 期間集計（確定値・月初〜直近確定日）』"
+        "『先月 期間集計（確定値・前月1日〜末日）』、ファネルは『ファネル直近30日 期間集計（確定値）』等）。\n"
+        "  日次行や別期間のブロックから自分で再集計しない。\n"
+        "- 『今月』は月初〜直近確定日まで（月途中）の集計＝回答に必ずその旨を添える。"
+        "『先月』は前月1日〜末日の確定集計。\n"
+        "- 今月と先月の比較は『月次KPI集計』の行を使ってよい（期間ブロックと同一定義・同値）。\n"
+        "- 期間を指定されたのに該当する期間集計ブロックが渡されていない場合は、"
+        "他期間の値を流用せず『その期間の確定値が今回のデータに含まれていない』と明示し、"
+        "質問文に『直近30日』『今月』『先月』のいずれかの語を含めて再質問するよう案内する。\n"
         "\n【KPI/KGI目標と達成率（2026-07-16 客様確定値）】\n"
         "- 目標値と当月達成率は『KPI目標と当月達成率（確定値・月途中）』の行に入っている。\n"
         "  目標値・達成率を自分で記憶・推定・再計算せず、必ずこの行の値をそのまま引用する。\n"
@@ -489,7 +591,8 @@ def _ask_ai(
         "『契約数は御社側の実績値との突合が必要』と案内する（推定値を出さない）。\n"
         "- 上記の行が渡されていない質問では、目標値を推測して答えない。\n"
         "\n【利用可能なデータ範囲】\n"
-        "- 日次KPI・ファネル: 直近14日 ／ ページ別: 全期間 ／ チャネル別: 月次\n"
+        "- 日次KPI・ファネル: 直近14日（質問に期間語があれば 直近30日／今月／先月 の期間集計も供給）"
+        " ／ ページ別: 全期間 ／ チャネル別: 月次\n"
         "- KPI目標と達成率: 当月（1日〜直近確定日）\n"
         "- 日次KPIには 直帰率(bounce_rate_pct)・新規ユーザー率(new_user_rate_pct)・エンゲージメント率も含む\n"
         "- ページ別の『コンバージョン数』は“そのページを閲覧して最終的にお問い合わせ完了に至った"
@@ -500,7 +603,8 @@ def _ask_ai(
         "コンバージョンに貢献したページとしては挙げない\n"
         "- 流入・ページ内訳（チャネル/検索エンジン/参照元/LP/離脱ページ/デバイス/新規リピーター）: 直近30日\n"
         "- GA4→BigQueryの日次連携のため、直近1〜2日のデータは未反映\n"
-        "- 渡されたデータは固定範囲(14日/30日/月次)の集計。これより前にさかのぼる任意期間の再集計はこのチャットでは不可。\n"
+        "- 渡されたデータは標準期間窓（直近14日／直近30日／今月／先月／月次）の確定集計。"
+        "これ以外の任意期間の再集計はこのチャットでは不可。\n"
         "  その場合は『この期間の自由指定集計は現在のAIチャットでは未対応で、Looker Studioで任意期間を指定してご確認いただけます』と案内する\n"
         "- 範囲外・データにない質問には「現在のデータでは回答できない」と明示し、"
         "代わりに確認できる内容を案内する\n"

@@ -15,7 +15,7 @@ AS
 WITH inquiry_sessions AS (
   SELECT DISTINCT session_id AS inq_session_id
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`
-  WHERE event_name = 'contact_finish'
+  WHERE conversion_type = 'inquiry'  -- 2026-07-23: /document/の資料DLを除外（お問い合わせのみ）
     AND session_id IS NOT NULL
 )
 SELECT
