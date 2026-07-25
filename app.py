@@ -184,6 +184,81 @@ def _period_funnel_sql(project_id: str, where_sql: str) -> str:
     """
 
 
+# ── ページ/チャネルの期間窓（客様⑤ 2026-07-25 追記）─────────────
+# ページ別（人気ページ／ページ経由CV／離脱の多いページ）とチャネル別を、期間指定
+# （直近14日／直近30日／今月／先月）で回答するための窓。KPI/ファネルは直近14日を
+# 専用ブロックで持つが、ページ/チャネルは期間別供給が無かった（全期間合計／月次のみ）
+# ため、ここでは 14日 を含めて定義する。標準4窓のみ＝任意の日付範囲は Looker に委ねる
+# （固定サマリー注入型の設計線引き）。app.py と同一定義＝parityテストがASTで強制。
+_PAGE_WINDOW_14D = (
+    "直近14日",
+    "report_date >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 13 DAY)",
+    ("14日", "１４日"),
+    "確定値",
+)
+PAGE_PERIOD_WINDOWS = (_PAGE_WINDOW_14D,) + PERIOD_WINDOWS
+
+
+def _requested_page_windows(question_lower: str) -> list:
+    """質問文に期間語（14日/30日/今月/先月）が含まれる窓だけを返す（無ければ空）。"""
+    return [
+        (name, where_sql, suffix)
+        for name, where_sql, keywords, suffix in PAGE_PERIOD_WINDOWS
+        if any(k in question_lower for k in keywords)
+    ]
+
+
+def _period_page_sql(project_id: str, where_sql: str) -> str:
+    """期間指定の人気ページTOP（PV順）＋ページ経由お問い合わせCV（実数）。
+    CVは inquiry_cv_sessions＝お問い合わせ完了のみ（定義書準拠・⑦と同定義）。"""
+    return f"""
+            SELECT page_path,
+                   MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+                   SUM(pageviews) AS pageviews,
+                   SUM(inquiry_cv_sessions) AS inquiry_cv_sessions
+            FROM `{project_id}.marts.page_performance_daily`
+            WHERE {where_sql}
+            GROUP BY page_path
+            ORDER BY pageviews DESC
+            LIMIT 10
+    """
+
+
+def _period_exit_sql(project_id: str, where_sql: str) -> str:
+    """期間指定の離脱の多いページ（離脱セッション数の多い順）。
+    ※ GA4に「ページ別離脱率(%)」の指標が無いため、離脱ページ次元
+      （traffic_breakdown_daily dimension_type='exit_page'）の離脱セッション数で
+      「どのページで離れているか」を件数ランキングで示す（率ではない）。"""
+    return f"""
+            SELECT dimension_value AS exit_page,
+                   MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+                   SUM(sessions) AS exit_sessions
+            FROM `{project_id}.marts.traffic_breakdown_daily`
+            WHERE {where_sql} AND dimension_type = 'exit_page'
+            GROUP BY exit_page
+            ORDER BY exit_sessions DESC
+            LIMIT 10
+    """
+
+
+def _period_channel_sql(project_id: str, where_sql: str) -> str:
+    """期間指定のチャネル別（セッション/お問い合わせCV/CVR/エンゲージ率）。
+    率は ratio of sums（AVG禁止）＝Looker真値定義と一致。"""
+    return f"""
+            SELECT dimension_value AS channel,
+                   MIN(report_date) AS period_start, MAX(report_date) AS period_end,
+                   SUM(sessions) AS sessions,
+                   SUM(inquiry_conversions) AS inquiry_conversions,
+                   ROUND(SAFE_DIVIDE(SUM(inquiry_conversions), SUM(sessions))*100,2) AS inquiry_cvr_pct,
+                   ROUND(SAFE_DIVIDE(SUM(engaged_sessions), SUM(sessions))*100,1)    AS engagement_rate_pct
+            FROM `{project_id}.marts.traffic_breakdown_daily`
+            WHERE {where_sql} AND dimension_type = 'channel'
+            GROUP BY channel
+            ORDER BY sessions DESC
+            LIMIT 10
+    """
+
+
 def _ja(df: pd.DataFrame) -> pd.DataFrame:
     """DataFrameの列名を日本語に変換"""
     return df.rename(columns=COLUMN_JA)
@@ -291,6 +366,7 @@ def _init_clients():
 def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
     q = question.lower()
     period_windows = _requested_period_windows(q)
+    page_windows = _requested_page_windows(q)
     fetch_page    = any(k in q for k in ["ページ", "page", "url", "スクロール", "離脱", "閲覧", "コンテンツ"])
     fetch_channel = any(k in q for k in ["チャネル", "流入", "経路", "organic", "direct", "検索"])
     fetch_funnel  = any(k in q for k in ["ファネル", "フォーム", "問い合わせ", "cv", "コンバージョン", "送信"])
@@ -404,6 +480,10 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
             FROM `{project_id}.marts.page_performance_daily`
             GROUP BY page_path ORDER BY pageviews DESC LIMIT 15
         """, "ページ別パフォーマンス")
+        # 2026-07-25 客様⑤: ページの期間指定質問に「人気ページ・CV」「離脱の多いページ」を供給。
+        for name, where_sql, suffix in page_windows:
+            _q(_period_page_sql(project_id, where_sql), f"{name} 人気ページTOP・CV（期間集計・{suffix}）")
+            _q(_period_exit_sql(project_id, where_sql), f"{name} 離脱の多いページ（離脱セッション数・{suffix}）")
 
     if fetch_channel:
         # 2026-07-10 R10-C 横断整合: CV率は定義書2026-07-09「お問い合わせ完了のみ」
@@ -416,6 +496,9 @@ def _fetch_data(question: str, bq, project_id: str) -> dict[str, pd.DataFrame]:
             FROM `{project_id}.marts.channel_kpi_monthly`
             ORDER BY report_month DESC, sessions DESC
         """, "チャネル別月次KPI")
+        # 2026-07-25 客様⑤: チャネルの期間指定質問に該当窓の集計を供給（流入増減の判定用）。
+        for name, where_sql, suffix in page_windows:
+            _q(_period_channel_sql(project_id, where_sql), f"{name} チャネル別（期間集計・{suffix}）")
 
     if fetch_funnel:
         _q(f"""
@@ -580,6 +663,13 @@ def _ask_ai(
         "- 期間を指定されたのに該当する期間集計ブロックが渡されていない場合は、"
         "他期間の値を流用せず『その期間の確定値が今回のデータに含まれていない』と明示し、"
         "質問文に『直近30日』『今月』『先月』のいずれかの語を含めて再質問するよう案内する。\n"
+        "- ページ別（人気ページ／ページ経由CV）とチャネル別も、期間を指定された質問には"
+        "『直近14日 人気ページTOP・CV（期間集計…）』『直近30日 チャネル別（期間集計…）』等の"
+        "ブロックの値をそのまま引用する（全期間合計や月次から自分で切り出さない）。\n"
+        "- 『離脱率が高いページ／離脱の多いページ』は『○○ 離脱の多いページ（離脱セッション数…）』の"
+        "ブロックを使い離脱セッション数の多い順で答える。GA4にページ別離脱率(%)の指標が無いため"
+        "件数（離脱セッション数）ベースである旨を一言添える。\n"
+        "- 任意の日付範囲（例: 8月10〜20日）は固定供給の対象外＝Lookerでの期間指定を案内する。\n"
         "\n【KPI/KGI目標と達成率（2026-07-16 客様確定値）】\n"
         "- 目標値と当月達成率は『KPI目標と当月達成率（確定値・月途中）』の行に入っている。\n"
         "  目標値・達成率を自分で記憶・推定・再計算せず、必ずこの行の値をそのまま引用する。\n"

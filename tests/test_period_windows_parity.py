@@ -25,9 +25,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from src.natural_language_qa import (  # noqa: E402
+    PAGE_PERIOD_WINDOWS,
     PERIOD_WINDOWS,
+    _period_channel_sql,
+    _period_exit_sql,
     _period_funnel_sql,
     _period_kpi_sql,
+    _period_page_sql,
+    _requested_page_windows,
     _requested_period_windows,
 )
 
@@ -37,6 +42,13 @@ SHARED_DEFS = (
     "_requested_period_windows",
     "_period_kpi_sql",
     "_period_funnel_sql",
+    # 客様⑤ 2026-07-25: ページ/チャネルの期間窓（14日含む）も両経路AST一致で強制
+    "_PAGE_WINDOW_14D",
+    "PAGE_PERIOD_WINDOWS",
+    "_requested_page_windows",
+    "_period_page_sql",
+    "_period_exit_sql",
+    "_period_channel_sql",
 )
 
 
@@ -127,6 +139,61 @@ def test_both_paths_wire_period_blocks_into_context():
         assert "_period_funnel_sql(project_id, where_sql)" in code, f"{rel} がファネル期間SQLを使っていない"
         assert code.count("{name} 期間集計（{suffix}）") >= 2, f"{rel} の期間ブロックラベル配線が不足"
         assert "ファネル{name} 期間集計（{suffix}）" in code, f"{rel} にファネル期間ラベルが無い"
+
+
+def test_page_period_windows_compose_14d_plus_standard():
+    """客様⑤: ページ/チャネル窓＝直近14日＋標準3窓（KPI/ファネルは14日を含めない）"""
+    names = [n for n, _, _, _ in PAGE_PERIOD_WINDOWS]
+    assert names == ["直近14日", "直近30日", "今月", "先月"]
+    w14 = PAGE_PERIOD_WINDOWS[0]
+    assert w14[1] == (
+        "report_date >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 13 DAY)"
+    )
+    # 14日語で発火し、標準窓と両立する（KPI側 _requested_period_windows は14日を返さない）
+    def pnames(q: str) -> list:
+        return [n for n, _, _ in _requested_page_windows(q.lower())]
+    assert pnames("直近14日の人気ページTOP10は？") == ["直近14日"]
+    assert pnames("先月コンバージョンに貢献したページは？") == ["先月"]
+    assert [n for n, _, _ in _requested_period_windows("直近14日の傾向は？".lower())] == []
+
+
+def test_page_channel_exit_sql_conventions():
+    """客様⑤: ページ/離脱/チャネルSQLが確定値作法（period・対象テーブル・率はSUM/SUM）"""
+    where = PAGE_PERIOD_WINDOWS[0][1]
+    page = _period_page_sql("proj", where)
+    exit_ = _period_exit_sql("proj", where)
+    chan = _period_channel_sql("proj", where)
+    assert "`proj.marts.page_performance_daily`" in page
+    assert "SUM(inquiry_cv_sessions)" in page  # ⑦と同定義=お問い合わせ完了のみ
+    assert "dimension_type = 'exit_page'" in exit_  # 離脱ページ次元
+    assert "`proj.marts.traffic_breakdown_daily`" in exit_
+    assert "dimension_type = 'channel'" in chan
+    assert "SAFE_DIVIDE(SUM(inquiry_conversions), SUM(sessions))" in chan  # ratio of sums
+    for sql in (page, exit_, chan):
+        assert f"WHERE {where}" in sql, "期間WHERE句が注入されていない"
+        assert "AVG(" not in sql, "率はratio of sums（AVG禁止）"
+
+
+def test_both_paths_wire_page_channel_period_blocks():
+    """客様⑤: 両経路がページ/離脱/チャネルの期間ブロックを実配線していること"""
+    for rel in PATHS:
+        code = _read(rel)
+        assert "_requested_page_windows(q)" in code, f"{rel} がページ期間語検知を呼んでいない"
+        assert "_period_page_sql(project_id, where_sql)" in code, f"{rel} が人気ページ期間SQL未使用"
+        assert "_period_exit_sql(project_id, where_sql)" in code, f"{rel} が離脱ページ期間SQL未使用"
+        assert "_period_channel_sql(project_id, where_sql)" in code, f"{rel} がチャネル期間SQL未使用"
+        assert "人気ページTOP・CV（期間集計・{suffix}）" in code, f"{rel} に人気ページ期間ラベルが無い"
+        assert "離脱の多いページ（離脱セッション数・{suffix}）" in code, f"{rel} に離脱ページ期間ラベルが無い"
+        assert "チャネル別（期間集計・{suffix}）" in code, f"{rel} にチャネル期間ラベルが無い"
+
+
+def test_both_prompts_have_page_channel_exit_rules():
+    """客様⑤: プロンプトにページ/チャネル/離脱の期間引用ルールが両経路にあること"""
+    for rel in PATHS:
+        code = _read(rel)
+        assert "離脱の多いページ（離脱セッション数…）" in code, f"{rel} に離脱ページ引用ルールが無い"
+        assert "GA4にページ別離脱率(%)の指標が無いため" in code, f"{rel} に離脱率=件数ベースの注記が無い"
+        assert "任意の日付範囲" in code, f"{rel} に任意期間→Looker案内が無い"
 
 
 def test_both_prompts_have_period_citation_rules():
