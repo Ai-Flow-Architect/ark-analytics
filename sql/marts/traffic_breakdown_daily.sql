@@ -49,6 +49,16 @@ inquiry_sessions AS (
     AND session_id IS NOT NULL
 ),
 
+-- 資料DL完了（/document/?mode=finish）セッション（2026-07-26 検収R12⑥対応）。
+-- inquiry_sessions と同一設計: conversion_type='document_dl' のセッションを DISTINCT で拾い、
+-- チャネル/デバイス等の各ディメンションで「資料DL数」を数える専用列の供給源にする。
+document_dl_sessions AS (
+  SELECT DISTINCT session_id AS dl_session_id
+  FROM `__ARK_PROJECT__.staging.stg_ga4_events`
+  WHERE conversion_type = 'document_dl'
+    AND session_id IS NOT NULL
+),
+
 sess AS (
   SELECT
     s.session_date                                    AS report_date,
@@ -57,6 +67,7 @@ sess AS (
     s.is_engaged,
     s.has_conversion,
     (inq.inq_session_id IS NOT NULL)                  AS has_inquiry_conversion,
+    (dl.dl_session_id IS NOT NULL)                    AS has_document_dl_conversion,
     s.page_view_count,
     (s.session_date = uf.first_session_date)          AS is_new_user_session,
     -- 新規/リピーター（セッション単位・2026-07-09 定義書対応）:
@@ -110,6 +121,7 @@ sess AS (
   FROM `__ARK_PROJECT__.staging.stg_sessions` s
   JOIN user_first uf USING (user_pseudo_id)
   LEFT JOIN inquiry_sessions inq ON s.session_id = inq.inq_session_id
+  LEFT JOIN document_dl_sessions dl ON s.session_id = dl.dl_session_id
 ),
 
 exploded AS (
@@ -121,6 +133,7 @@ exploded AS (
     dim.dimension_type,
     dim.dimension_value,
     session_id, user_pseudo_id, is_engaged, has_conversion, has_inquiry_conversion,
+    has_document_dl_conversion,
     page_view_count, is_new_user_session, is_first_session
   FROM sess,
   UNNEST([
@@ -156,6 +169,12 @@ SELECT
   --   Looker のチャネル別/LP別「コンバージョン数」「CV率」はこちらを使うこと。
   --   CV率（期間集計）= SUM(inquiry_conversions)/SUM(sessions)*100（ratio of sums）。
   COUNTIF(has_inquiry_conversion)                                     AS inquiry_conversions,
+  -- 資料DL数【2026-07-26 検収R12⑥・チャネル分析への資料DL追加】
+  --   資料DL完了（conversion_type='document_dl'）到達セッション数。
+  --   期間集計・率は ratio of sums: SUM(document_dl_conversions)/SUM(sessions)*100。
+  --   conversions（広義CV）≒ inquiry_conversions + document_dl_conversions
+  --   （appointment 未実装のため。同一セッションで問い合わせとDLの両方を完了した場合のみ重複で乖離）。
+  COUNTIF(has_document_dl_conversion)                                 AS document_dl_conversions,
 
   -- ── 率（素値 0.xx・後方互換／単日参照用） ───────────────────
   ROUND(SAFE_DIVIDE(COUNTIF(is_engaged), COUNT(DISTINCT session_id)), 4)

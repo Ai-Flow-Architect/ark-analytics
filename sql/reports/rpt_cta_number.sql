@@ -24,6 +24,9 @@ SELECT
   click_sessions,
   click_users,
   inquiry_cv_click_sessions,
+  -- CV達成セッション数（お問い合わせ完了＋資料DL完了のいずれか到達・2026-07-26 検収R12⑪）。
+  --   期間集計の到達率は SUM(cv_click_sessions)/SUM(click_sessions)*100（ratio of sums・AVG禁止）。
+  cv_click_sessions,
   cta_to_cv_rate,
   cta_to_cv_rate_pct
 FROM `__ARK_PROJECT__.marts.cta_number_breakdown_daily`

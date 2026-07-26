@@ -17,6 +17,13 @@ WITH inquiry_sessions AS (
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   WHERE conversion_type = 'inquiry'  -- 2026-07-23: /document/の資料DLを除外（お問い合わせのみ）
     AND session_id IS NOT NULL
+),
+-- 資料DL完了セッション（2026-07-26 検収R12⑥対応・traffic_breakdown_daily と同一定義）
+document_dl_sessions AS (
+  SELECT DISTINCT session_id AS dl_session_id
+  FROM `__ARK_PROJECT__.staging.stg_ga4_events`
+  WHERE conversion_type = 'document_dl'
+    AND session_id IS NOT NULL
 )
 SELECT
   DATE_TRUNC(s.session_date, MONTH)                              AS report_month,
@@ -35,9 +42,13 @@ SELECT
   COUNTIF(inq.inq_session_id IS NOT NULL)                        AS inquiry_conversions,
   ROUND(SAFE_DIVIDE(COUNTIF(inq.inq_session_id IS NOT NULL), COUNT(DISTINCT s.session_id)), 4)
                                                                  AS inquiry_conversion_rate,
+  -- 資料DL数【2026-07-26 検収R12⑥・チャネル分析への資料DL追加】
+  --   conversions（広義CV）≒ inquiry_conversions + document_dl_conversions（appointment 未実装のため）
+  COUNTIF(dl.dl_session_id IS NOT NULL)                          AS document_dl_conversions,
   ROUND(AVG(s.session_duration_sec), 1)                          AS avg_session_duration
 
 FROM `__ARK_PROJECT__.staging.stg_sessions` s
 LEFT JOIN inquiry_sessions inq ON s.session_id = inq.inq_session_id
+LEFT JOIN document_dl_sessions dl ON s.session_id = dl.dl_session_id
 GROUP BY report_month, channel_grouping
 ;

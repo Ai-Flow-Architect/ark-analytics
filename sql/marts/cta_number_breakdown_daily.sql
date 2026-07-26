@@ -82,7 +82,10 @@ cta_clicks AS (
 converting_sessions AS (
   SELECT
     session_id,
-    LOGICAL_OR(conversion_type = 'inquiry') AS has_inquiry  -- 2026-07-23: /document/の資料DL(contact_finish)はconversion_typeで除外
+    LOGICAL_OR(conversion_type = 'inquiry') AS has_inquiry,  -- 2026-07-23: /document/の資料DL(contact_finish)はconversion_typeで除外
+    -- 2026-07-26 検収R12⑪: お問い合わせ完了(inquiry) または 資料DL完了(document_dl) の
+    -- いずれかに到達したか（client要望「/contact/?mode=finish または /document/?mode=finish のいずれか到達」）。
+    LOGICAL_OR(conversion_type IN ('inquiry', 'document_dl')) AS has_cv
   FROM `__ARK_PROJECT__.staging.stg_ga4_events`
   WHERE is_conversion
     AND session_id IS NOT NULL
@@ -99,7 +102,9 @@ agg AS (
     COUNT(*)                                                           AS cta_clicks,
     COUNT(DISTINCT c.session_id)                                       AS click_sessions,
     COUNT(DISTINCT c.user_pseudo_id)                                   AS click_users,
-    COUNT(DISTINCT IF(cv.has_inquiry, c.session_id, NULL))            AS inquiry_cv_click_sessions
+    COUNT(DISTINCT IF(cv.has_inquiry, c.session_id, NULL))            AS inquiry_cv_click_sessions,
+    -- 2026-07-26 検収R12⑪: お問い合わせ完了 or 資料DL完了のいずれか到達セッション数
+    COUNT(DISTINCT IF(cv.has_cv, c.session_id, NULL))                 AS cv_click_sessions
   FROM cta_clicks c
   LEFT JOIN converting_sessions cv ON c.session_id = cv.session_id
   WHERE c.cta_id_norm IS NOT NULL
@@ -124,6 +129,8 @@ SELECT
   a.click_sessions,
   a.click_users,
   a.inquiry_cv_click_sessions,
+  -- CV達成セッション数（お問い合わせ完了＋資料DL完了のいずれか到達・2026-07-26 検収R12⑪）
+  a.cv_click_sessions,
 
   -- CTA番号経由のお問い合わせCV到達率（素値 0.xx）
   ROUND(SAFE_DIVIDE(a.inquiry_cv_click_sessions, a.click_sessions), 4)      AS cta_to_cv_rate,
