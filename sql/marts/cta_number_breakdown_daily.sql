@@ -14,6 +14,11 @@
 --   ※ 削除予定ボタン（営業メリットFVの資料DL / 導入事例 / サービス紹介・営業戦略内）は
 --     付与対象外＝番号なしのため本martには現れない（正しい挙動）。
 --
+-- 行の出方（2026-07-26 検収R12② で変更）: 番号付与開始日(2026-07-14)以降は、
+--   クリック実績の有無に関わらず対応表の全番号を毎日1行ずつ出力する（実績なし=0）。
+--   Lookerの表は行＝データ行のため、これが無いとクリック0件の番号が行ごと消え、
+--   期間によっては「データなし」表示になる（client 指摘の②）。
+--
 -- 集計: 番号（cta_id）を主軸に、クリック数・クリックセッション数・ユーザー数・
 --   CTA経由CV（お問い合わせ完了）到達セッション数と到達率を出す。
 --   率は ratio of sums（Looker計算フィールドで SUM(cv)/SUM(click_sessions)）。
@@ -92,6 +97,28 @@ converting_sessions AS (
   GROUP BY session_id
 ),
 
+-- ── 表示用の日付スパイン（2026-07-26 検収R12②: クリック0件の番号も常に全行表示）──
+--   client要望: 「設定したCTAがすべて表示される想定」「期間指定で『データなし』になる」。
+--   Lookerの表は行＝データ行のため、クリックが無い番号は行ごと消える（＝要望と不一致）。
+--   → 番号付与の本番開始日〜最新データ日までの各日 × 対応表21番号 のグリッドを作り、
+--     実績が無い組み合わせは 0 で埋める（クリック実績のある期間だけ行が出る挙動を解消）。
+--   付与開始日より前は「番号自体が存在しない」ため 0 行のまま（過去を偽らない）。
+cta_numbering_start AS (
+  SELECT DATE '2026-07-14' AS start_date   -- data-cta-id 本番付与日（SQL冒頭コメントの正本日付）
+),
+
+data_max_date AS (
+  SELECT MAX(event_date) AS max_date
+  FROM `__ARK_PROJECT__.staging.stg_ga4_events`
+),
+
+date_spine AS (
+  SELECT d AS report_date
+  FROM cta_numbering_start s, data_max_date x,
+       UNNEST(GENERATE_DATE_ARRAY(s.start_date, GREATEST(s.start_date, x.max_date))) AS d
+  WHERE x.max_date IS NOT NULL
+),
+
 agg AS (
   SELECT
     c.report_date,
@@ -109,34 +136,47 @@ agg AS (
   LEFT JOIN converting_sessions cv ON c.session_id = cv.session_id
   WHERE c.cta_id_norm IS NOT NULL
   GROUP BY c.report_date, c.cta_id_norm
+),
+
+-- 出力する行の骨格＝「スパイン×対応表21番号」＋「対応表外の実績番号」（後者を落とさない）
+row_keys AS (
+  SELECT s.report_date, m.cta_id
+  FROM date_spine s
+  CROSS JOIN cta_number_master m
+  UNION DISTINCT
+  SELECT report_date, cta_id FROM agg
 )
 
 SELECT
-  a.report_date,
-  a.cta_id,
+  k.report_date,
+  k.cta_id,
   -- 対応表ラベル（未知番号=対応表外の番号が来た場合は (対応表外) と明示）
   COALESCE(m.page_group,     '(対応表外)')                            AS page_group,
   COALESCE(m.page_path_label, '(対応表外)')                          AS page_path_label,
   COALESCE(m.position_label,  '(対応表外)')                          AS position_label,
   COALESCE(m.purpose_label,   '(対応表外)')                          AS purpose_label,
   -- 表示用ラベル: 「01 ヘッダー 資料ダウンロード」形式
-  CONCAT(a.cta_id, ' ',
+  CONCAT(k.cta_id, ' ',
          COALESCE(m.position_label, ''), ' ',
          COALESCE(m.purpose_label, ''))                              AS cta_label,
   a.sample_cta_text,
 
-  a.cta_clicks,
-  a.click_sessions,
-  a.click_users,
-  a.inquiry_cv_click_sessions,
+  -- 実績が無い日×番号は 0 で埋める（検収R12②: 0件番号の常時表示）
+  COALESCE(a.cta_clicks,                0)                           AS cta_clicks,
+  COALESCE(a.click_sessions,            0)                           AS click_sessions,
+  COALESCE(a.click_users,               0)                           AS click_users,
+  COALESCE(a.inquiry_cv_click_sessions, 0)                           AS inquiry_cv_click_sessions,
   -- CV達成セッション数（お問い合わせ完了＋資料DL完了のいずれか到達・2026-07-26 検収R12⑪）
-  a.cv_click_sessions,
+  COALESCE(a.cv_click_sessions,         0)                           AS cv_click_sessions,
 
   -- CTA番号経由のお問い合わせCV到達率（素値 0.xx）
+  --   クリック0件の行は分母0のため NULL（0%と断定しない＝率の捏造を避ける）。
   ROUND(SAFE_DIVIDE(a.inquiry_cv_click_sessions, a.click_sessions), 4)      AS cta_to_cv_rate,
   -- 同（0〜100・単日表示用）
   ROUND(SAFE_DIVIDE(a.inquiry_cv_click_sessions, a.click_sessions) * 100, 2) AS cta_to_cv_rate_pct
 
-FROM agg a
-LEFT JOIN cta_number_master m ON a.cta_id = m.cta_id
+FROM row_keys k
+LEFT JOIN agg a
+  ON k.report_date = a.report_date AND k.cta_id = a.cta_id
+LEFT JOIN cta_number_master m ON k.cta_id = m.cta_id
 ;
