@@ -63,6 +63,44 @@ def notify_failure(
     if context:
         ctx_lines = "\n" + "\n".join(f"  - {k}: {v}" for k, v in context.items())
 
+    payload = json.dumps({"app_id": app_id, "app_secret": app_secret}).encode()
+    req = urllib.request.Request(
+        "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+            data = json.loads(r.read())
+        return data.get("tenant_access_token")
+    except Exception as e:
+        print(f"[alert] tenant_access_token 取得失敗: {e}")
+        return None
+
+
+def notify_failure(
+    job: str,
+    reason: str,
+    context: dict[str, Any] | None = None,
+) -> bool:
+    app_id = os.environ.get("LARK_APP_ID", "")
+    app_secret = os.environ.get("LARK_APP_SECRET", "")
+    chat_id = os.environ.get("LARK_CHAT_ID", DEFAULT_CHAT_ID)
+
+    if not app_id or not app_secret:
+        print(f"[alert] LARK_APP_ID/SECRET 未設定のため通知スキップ: {job} / {reason}")
+        return False
+
+    ctx = ssl.create_default_context()
+    token = _get_tenant_token(app_id, app_secret, ctx)
+    if not token:
+        return False
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ctx_lines = ""
+    if context:
+        ctx_lines = "\n" + "\n".join(f"  - {k}: {v}" for k, v in context.items())
+
     text = (
         f"❌ ark-analytics ジョブ失敗\n"
         f"━━━━━━━━━━━━━━\n"
