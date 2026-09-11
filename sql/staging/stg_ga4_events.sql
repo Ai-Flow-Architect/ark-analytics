@@ -4,6 +4,7 @@
 -- プロジェクト: __ARK_PROJECT__ / データセット: analytics___ARK_GA4_PROPID__
 
 CREATE OR REPLACE VIEW `__ARK_PROJECT__.staging.stg_ga4_events` AS
+WITH ev AS (
 SELECT
   PARSE_DATE('%Y%m%d', event_date)                                                   AS event_date,
   TIMESTAMP_MICROS(event_timestamp)                                                  AS event_timestamp,
@@ -56,7 +57,7 @@ SELECT
     'contact_finish',    -- お問い合わせ送信完了（実装済みカスタムイベント）
     'file_download',     -- 資料DL（旧定義・全期間0件。実際の資料DLは contact_finish + /document/ = conversion_type で分類）
     'book_appointment'   -- 相談申込（未実装・将来追加予定）
-  )                                                                                  AS is_conversion,
+  )                                                                                  AS _is_conversion_base,  -- 営業メール除外前（最終値は末尾の外側SELECTで確定）
 
   -- コンバージョン種別（2026-07-23 客様③「資料DLが計測されない」対応で追加）:
   --   資料DLフォーム（/document/#mailform）の送信完了は file_download ではなく、
@@ -75,7 +76,7 @@ SELECT
     WHEN event_name = 'file_download'        THEN 'document_dl'  -- 旧定義の資料DL経路（全期間0件・発火時も同カテゴリへ合流）
     WHEN event_name = 'book_appointment'     THEN 'appointment'  -- 相談申込（未実装・将来追加予定）
     ELSE NULL
-  END                                                                                AS conversion_type,
+  END                                                                                AS _conversion_type_base,  -- 営業メール除外前（最終値は末尾の外側SELECTで確定）
 
   -- スクロール深度。2026-06-08 修正:
   --   GTM custom タグ① scroll_depth は event_params に深度値(scroll_pct)を送出できておらず
@@ -101,7 +102,15 @@ SELECT
     (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_id'),
     CAST((SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'cta_id') AS STRING)
   )                                                                                  AS cta_id,
-  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_text')     AS cta_text
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'cta_text')     AS cta_text,
+
+  -- お問い合わせ種別（2026-09-11 営業メールをCV集計から除外するため追加）。
+  --   GTM タグ「GA4 - お問い合わせ種別記録」が、入力画面で選ばれた種別（select[name=kind]）を
+  --   sessionStorage に保持し、完了画面（/contact/?mode=finish）で inquiry_kind イベントとして送る。
+  --   値: sales(=営業メール) / partner / pricing / case_study / other / unknown（保持なし）。
+  --   ※ contact_finish は GA4 側の「イベント作成」で生成されるため GTM から直接パラメータを付けられない
+  --     ＝同じセッションの inquiry_kind で種別を判定する（末尾の外側SELECT）。
+  (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'inquiry_type') AS inquiry_type
 
 FROM
   `__ARK_PROJECT__.analytics___ARK_GA4_PROPID__.events_*`
@@ -109,4 +118,28 @@ WHERE
   _TABLE_SUFFIX BETWEEN
     FORMAT_DATE('%Y%m%d', DATE_SUB(CURRENT_DATE(), INTERVAL 13 MONTH))
     AND FORMAT_DATE('%Y%m%d', CURRENT_DATE())
+)
+-- OUTER: 営業メール除外（2026-09-11 客様ご依頼・7/6 お約束分）
+--   同じセッションに inquiry_kind(inquiry_type='sales') があるお問い合わせ完了は
+--   conversion_type='inquiry_sales' に分け、is_conversion（広義CV）からも外す。
+--   marts はすべて conversion_type='inquiry' / is_conversion を参照するため、ここ1か所で
+--   主要分析・ファネル・チャネル・総合ビュー・CTA の各CV指標とAIチャットに一律で効く。
+--   資料DL（document_dl）は種別と無関係のため対象外。session_id が NULL の行は判定しない。
+--   制約: 種別の送出開始（GTM 公開）より前のお問い合わせは種別が残っていないため除外できない。
+SELECT
+  * EXCEPT (_is_conversion_base, _conversion_type_base, _is_sales_session),
+  CASE
+    WHEN _conversion_type_base = 'inquiry' AND _is_sales_session THEN 'inquiry_sales'
+    ELSE _conversion_type_base
+  END                                                                                AS conversion_type,
+  _is_conversion_base
+    AND NOT (_conversion_type_base = 'inquiry' AND _is_sales_session)               AS is_conversion
+FROM (
+  SELECT
+    *,
+    session_id IS NOT NULL
+      AND LOGICAL_OR(event_name = 'inquiry_kind' AND inquiry_type = 'sales')
+          OVER (PARTITION BY session_id)                                             AS _is_sales_session
+  FROM ev
+)
 ;
