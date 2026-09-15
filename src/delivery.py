@@ -16,7 +16,7 @@ import requests
 import yaml
 
 
-from src._config_loader import get_kpi_targets, load_config as _load_config
+from src._config_loader import get_kpi_targets, get_site_domain, load_config as _load_config
 
 
 class ReportDelivery:
@@ -50,7 +50,9 @@ class ReportDelivery:
             return False
 
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"【自動レポート】{month} Webサイト分析 | example.invalid"
+        # サイト名は Secrets の ARK_SITE_DOMAIN から読む（公開リポに実名を書かない・未設定なら出さない）
+        domain = get_site_domain()
+        msg["Subject"] = f"【自動レポート】{month} Webサイト分析" + (f" | {domain}" if domain else "")
         msg["From"] = sender
         msg["To"] = recipient
         if cc_emails:

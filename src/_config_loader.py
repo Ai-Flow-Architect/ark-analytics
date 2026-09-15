@@ -17,6 +17,19 @@ def _is_placeholder(value: str) -> bool:
     return any(token in upper for token in _PLACEHOLDER_TOKENS)
 
 
+def get_site_domain() -> str:
+    """レポートの件名・本文に出すサイトのドメイン。
+
+    公開リポに実名を書かないため、GitHub Secrets の ARK_SITE_DOMAIN から読む。
+    未設定・プレースホルダ（REDACTED / <...> / *.invalid / example.*）なら空文字＝表示しない。
+    2026-09-11: 伏字 example.invalid がコードに直書きされ、客様宛メールに13通載った事故の再発防止。
+    """
+    domain = os.environ.get("ARK_SITE_DOMAIN", "").strip()
+    if _is_placeholder(domain) or domain.lower().endswith(".invalid") or "example." in domain.lower():
+        return ""
+    return domain
+
+
 def load_config() -> dict:
     """settings.yaml を読み込み、環境変数で上書きする。
 

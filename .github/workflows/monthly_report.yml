@@ -52,6 +52,7 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ARK_CLIENT_EMAIL: ${{ secrets.ARK_CLIENT_EMAIL }}
           ARK_CC_EMAILS: ${{ secrets.ARK_CC_EMAILS }}
+          ARK_SITE_DOMAIN: ${{ secrets.ARK_SITE_DOMAIN }}
           ARK_GCP_PROJECT_ID: ${{ secrets.ARK_GCP_PROJECT_ID }}
           ARK_GA4_PROPERTY_ID: ${{ secrets.ARK_GA4_PROPERTY_ID }}
           ARK_GA4_RAW_DATASET: ${{ secrets.ARK_GA4_RAW_DATASET }}

@@ -7,7 +7,13 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from src._config_loader import get_kpi_targets
+from src._config_loader import get_kpi_targets, get_site_domain
+
+
+def _site_prefix() -> str:
+    """本文の「<ドメイン> | データ取得日時」の頭。ドメイン未設定なら空（伏字を客様に見せない）。"""
+    domain = get_site_domain()
+    return f"{domain} | " if domain else ""
 
 
 class ReportFormatter:
@@ -48,7 +54,7 @@ class ReportFormatter:
 </head>
 <body>
   <h1>📊 {month} Webサイト分析レポート</h1>
-  <p>example.invalid | データ取得日時: {generated_date}</p>
+  <p>{site_prefix}データ取得日時: {generated_date}</p>
   <p>計測期間: {period_label}</p>
 
   <h2>KPIサマリー</h2>
@@ -115,6 +121,7 @@ class ReportFormatter:
 
         return self.HTML_TEMPLATE.format(
             month=month,
+            site_prefix=_site_prefix(),
             generated_date=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
             period_label=period_label,
             sessions_target=self.sessions_target,
@@ -147,7 +154,7 @@ class ReportFormatter:
 
         return f"""# {month} Webサイト分析レポート
 
-> example.invalid | データ取得日時: {datetime.now().strftime('%Y年%m月%d日 %H:%M')}
+> {_site_prefix()}データ取得日時: {datetime.now().strftime('%Y年%m月%d日 %H:%M')}
 > 計測期間: {period_label}
 
 ## KPIサマリー

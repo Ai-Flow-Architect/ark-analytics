@@ -29,6 +29,8 @@ PLACEHOLDER_PATTERNS = [
     r"REDACTED-GA4-PROPID",
     r"REDACTED-CLIENT-EMAIL",
     r"REDACTED-CC-EMAIL",
+    # 2026-09-11: 公開用の伏字ドメインが件名・本文に直書きされ、客様宛メールに13通載った
+    r"example\.invalid",
 ]
 
 # 実行パスに残ってはいけないファイル（コード・YAML・SQL・シェル）
@@ -37,6 +39,7 @@ EXECUTION_FILE_EXTS = (".py", ".yml", ".yaml", ".sh", ".sql")
 # 検出パターン自体を定義しているファイル（許可リスト）
 ALLOWED_FILES = {
     os.path.normpath("tests/test_no_placeholder.py"),
+    os.path.normpath("tests/test_site_domain.py"),  # 伏字を弾くことの検査に伏字そのものを使う
     os.path.normpath("src/_config_loader.py"),
     os.path.normpath("scripts/daily_refresh.sh"),  # 自己防衛のgrepに残す
 }
