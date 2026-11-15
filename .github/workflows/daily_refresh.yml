@@ -28,6 +28,11 @@ permissions:
   contents: read
   issues: write     # notify-failure 用
 
+# 2026-11-15: 当方（AIフローアーキテクト）への失敗通知を止めるスイッチ。
+# リポジトリ変数 ARK_NOTIFY_DISABLED=1 で Lark・メールを送らない（Issue と処理本体は動く）。戻す＝変数を0に。
+env:
+  ARK_NOTIFY_DISABLED: ${{ vars.ARK_NOTIFY_DISABLED }}
+
 jobs:
   refresh:
     runs-on: ubuntu-latest

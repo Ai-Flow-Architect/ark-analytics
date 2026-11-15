@@ -97,7 +97,7 @@ runs:
 
     # ---------- (2/3) Lark Bot 通知 ----------
     - name: "[2/3] Notify Lark Bot"
-      if: always() && steps.issue.outputs.created != 'false'
+      if: always() && steps.issue.outputs.created != 'false' && env.ARK_NOTIFY_DISABLED != '1'
       continue-on-error: true
       shell: bash
       env:
@@ -142,7 +142,7 @@ runs:
 
     # ---------- (3/3) SMTP メール通知 ----------
     - name: "[3/3] Send SMTP Mail (out-of-band)"
-      if: always() && steps.issue.outputs.created != 'false'
+      if: always() && steps.issue.outputs.created != 'false' && env.ARK_NOTIFY_DISABLED != '1'
       continue-on-error: true
       shell: bash
       env:

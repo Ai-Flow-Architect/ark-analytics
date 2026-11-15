@@ -106,6 +106,10 @@ def notify_failure(
     context: dict[str, Any] | None = None,
     dedupe_key: str | None = None,
 ) -> bool:
+    # 2026-11-15: 当方への通知を止めるスイッチ（GitHub のリポジトリ変数 ARK_NOTIFY_DISABLED=1）
+    if os.environ.get("ARK_NOTIFY_DISABLED") == "1":
+        print(f"[alert] 通知停止中（ARK_NOTIFY_DISABLED=1）のため送りません: {job} / {reason}")
+        return True
     if dedupe_key:
         client, table_id = _state_client()
         if client is not None:

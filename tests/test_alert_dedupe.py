@@ -78,3 +78,12 @@ def test_no_key_keeps_old_behavior(monkeypatch):
     alert.notify_failure("j", "r")
     alert.notify_failure("j", "r")
     assert len(sent) == 2
+
+
+def test_disabled_switch_sends_nothing(monkeypatch):
+    state = _FakeState()
+    sent = _wire(monkeypatch, state)
+    monkeypatch.setenv("ARK_NOTIFY_DISABLED", "1")
+    assert alert.notify_failure("j", "r")
+    assert alert.notify_failure("j", "r", dedupe_key="k")
+    assert len(sent) == 0
