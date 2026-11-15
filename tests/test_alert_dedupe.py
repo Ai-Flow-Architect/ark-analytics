@@ -80,6 +80,19 @@ def test_no_key_keeps_old_behavior(monkeypatch):
     assert len(sent) == 2
 
 
+def test_failed_send_is_not_recorded(monkeypatch):
+    # 送信に失敗した件は「通知済み」にしない＝次回また送る（2026-11-15 検査役の指摘）
+    state = _FakeState()
+    sent = _wire(monkeypatch, state)
+    monkeypatch.setattr(alert, "_get_tenant_token", lambda *a: None)
+    assert alert.notify_failure("j", "r", dedupe_key="k") is False
+    assert "k" not in state.keys
+    monkeypatch.setattr(alert, "_get_tenant_token", lambda *a: "tok")
+    assert alert.notify_failure("j", "r", dedupe_key="k") is True
+    assert len(sent) == 1
+    assert "k" in state.keys
+
+
 def test_disabled_switch_sends_nothing(monkeypatch):
     state = _FakeState()
     sent = _wire(monkeypatch, state)

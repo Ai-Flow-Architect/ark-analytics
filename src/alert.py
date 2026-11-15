@@ -110,12 +110,12 @@ def notify_failure(
     if os.environ.get("ARK_NOTIFY_DISABLED") == "1":
         print(f"[alert] 通知停止中（ARK_NOTIFY_DISABLED=1）のため送りません: {job} / {reason}")
         return True
+    client, table_id = (None, None)
     if dedupe_key:
         client, table_id = _state_client()
         if client is not None:
             try:
                 seen = _already_notified(client, table_id, dedupe_key)
-                _record_seen(client, table_id, dedupe_key)
                 if seen:
                     print(f"[alert] 同じ件は通知済みのため送りません: {dedupe_key}")
                     return True
@@ -171,6 +171,12 @@ def notify_failure(
             result = json.loads(r.read())
         if result.get("code") == 0:
             print(f"[alert] Lark通知送信完了: {job}")
+            # 送れた時だけ「通知済み」を記録する（送信失敗で記録だけ残ると二度と通知されない）
+            if dedupe_key and client is not None:
+                try:
+                    _record_seen(client, table_id, dedupe_key)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[alert] 通知済みの記録に失敗（次回また送ります）: {e}")
             return True
         print(f"[alert] Lark送信失敗: {result.get('msg')}")
         return False
