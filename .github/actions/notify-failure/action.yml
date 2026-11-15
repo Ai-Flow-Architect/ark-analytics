@@ -29,9 +29,75 @@ inputs:
 runs:
   using: "composite"
   steps:
-    # ---------- (1/3) Lark Bot 通知 ----------
-    - name: "[1/3] Notify Lark Bot"
+    # 2026-11-15: 同じ失敗が続く間は Issue に追記するだけにし、Lark とメールは
+    # 「Issue を新しく作った時」の1回だけ送る（毎日同じ通知が届くのを止める）。
+    # Issue の処理自体が失敗した時は created が空＝送る側に倒す（障害を黙らせない）。
+    # ---------- (1/3) GitHub Issue 自動作成（先に判定する） ----------
+    - name: "[1/3] Open or Update GitHub Issue"
+      id: issue
       if: always()
+      continue-on-error: true
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const workflow = "${{ github.workflow }}";
+          const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+          const label = "monitoring-alert";
+          const title = `[ALERT] ${workflow} failed (auto-opened)`;
+          const failedStep = `${{ inputs.failed_step }}`;
+          const severity = `${{ inputs.severity }}`;
+          const sha = `${{ github.sha }}`;
+          const actor = `${{ github.actor }}`;
+
+          // 通知ループ防止: 既存open Issue（同workflow / 24h以内）があれば更新のみ
+          const existing = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo:  context.repo.repo,
+            state: "open",
+            labels: label,
+            per_page: 30,
+          });
+          const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const dup = existing.data.find(i =>
+            i.title.includes(workflow) && new Date(i.updated_at) > since
+          );
+
+          const body = [
+            `## Workflow失敗を自動検知しました`,
+            ``,
+            `- Workflow: \`${workflow}\``,
+            `- Failed step: \`${failedStep}\``,
+            `- Severity: \`${severity}\``,
+            `- Commit SHA: \`${sha}\``,
+            `- Actor: \`${actor}\``,
+            `- Run URL: ${runUrl}`,
+            ``,
+            `> このIssueは notify-failure composite action が自動生成しました。`,
+            `> 24h以内の同一workflow失敗はこのIssueに追記されます（Lark・メールは最初の1回だけ）。`,
+            `> 復旧したら手動でcloseしてください（誤close事故防止のため自動closeは無効）。`,
+          ].join("\n");
+
+          if (dup) {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: dup.number,
+              body: `### 再発検知 (${new Date().toISOString()})\n\n${body}`,
+            });
+            core.notice(`Updated existing issue #${dup.number}（Lark・メールは送らない）`);
+            core.setOutput("created", "false");
+          } else {
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title, body, labels: [label, "automated"],
+            });
+            core.notice(`Created new issue #${created.data.number}`);
+            core.setOutput("created", "true");
+          }
+
+    # ---------- (2/3) Lark Bot 通知 ----------
+    - name: "[2/3] Notify Lark Bot"
+      if: always() && steps.issue.outputs.created != 'false'
       continue-on-error: true
       shell: bash
       env:
@@ -74,69 +140,9 @@ runs:
           -X POST -H "Content-Type: application/json" \
           --data "$PAYLOAD" "$LARK_WEBHOOK" || echo "[notify-failure] Lark POST failed (continuing)"
 
-    # ---------- (2/3) GitHub Issue 自動作成 ----------
-    - name: "[2/3] Open or Update GitHub Issue"
-      if: always()
-      continue-on-error: true
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ inputs.github_token }}
-        script: |
-          const workflow = "${{ github.workflow }}";
-          const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
-          const label = "monitoring-alert";
-          const title = `[ALERT] ${workflow} failed (auto-opened)`;
-          const failedStep = `${{ inputs.failed_step }}`;
-          const severity = `${{ inputs.severity }}`;
-          const sha = `${{ github.sha }}`;
-          const actor = `${{ github.actor }}`;
-
-          // 通知ループ防止: 既存open Issue（同workflow / 24h以内）があれば更新のみ
-          const existing = await github.rest.issues.listForRepo({
-            owner: context.repo.owner,
-            repo:  context.repo.repo,
-            state: "open",
-            labels: label,
-            per_page: 30,
-          });
-          const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          const dup = existing.data.find(i =>
-            i.title.includes(workflow) && new Date(i.updated_at) > since
-          );
-
-          const body = [
-            `## Workflow失敗を自動検知しました`,
-            ``,
-            `- Workflow: \`${workflow}\``,
-            `- Failed step: \`${failedStep}\``,
-            `- Severity: \`${severity}\``,
-            `- Commit SHA: \`${sha}\``,
-            `- Actor: \`${actor}\``,
-            `- Run URL: ${runUrl}`,
-            ``,
-            `> このIssueは notify-failure composite action が自動生成しました。`,
-            `> 24h以内の同一workflow失敗はこのIssueに追記されます。`,
-            `> 復旧したら手動でcloseしてください（誤close事故防止のため自動closeは無効）。`,
-          ].join("\n");
-
-          if (dup) {
-            await github.rest.issues.createComment({
-              owner: context.repo.owner, repo: context.repo.repo,
-              issue_number: dup.number,
-              body: `### 再発検知 (${new Date().toISOString()})\n\n${body}`,
-            });
-            core.notice(`Updated existing issue #${dup.number}`);
-          } else {
-            const created = await github.rest.issues.create({
-              owner: context.repo.owner, repo: context.repo.repo,
-              title, body, labels: [label, "automated"],
-            });
-            core.notice(`Created new issue #${created.data.number}`);
-          }
-
     # ---------- (3/3) SMTP メール通知 ----------
     - name: "[3/3] Send SMTP Mail (out-of-band)"
-      if: always()
+      if: always() && steps.issue.outputs.created != 'false'
       continue-on-error: true
       shell: bash
       env:

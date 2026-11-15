@@ -30,7 +30,7 @@ from datetime import date, timedelta
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT_DIR)
 
-from src.alert import notify_failure  # noqa: E402
+from src.alert import clear_incidents, notify_failure  # noqa: E402
 from src._config_loader import get_project_id, make_bq_client  # noqa: E402
 
 
@@ -128,6 +128,8 @@ def main() -> int:
                 "today": str(today),
                 "threshold_days": str(args.threshold_days),
             },
+            # 同じ最新日のまま止まっている間は1回だけ知らせる（2026-11-15）
+            dedupe_key=f"data_freshness_check:stale:{max_date}",
         )
         return 1
 
@@ -181,10 +183,12 @@ def _check_date_gaps(client, project_id: str, today: date, args) -> int:
                 f"（GA4本体にデータがあるかは GA4 Data API/管理画面で確認）。"
             ),
             context={"source": args.source, "missing_dates": ", ".join(gaps)},
+            dedupe_key=f"data_freshness_check:gap:{','.join(gaps)}",
         )
         return 1
 
     print(f"[freshness] gap-check OK (known gaps excluded: {sorted(KNOWN_GAPS)})")
+    clear_incidents("data_freshness_check:")  # 復旧＝次に同じ事が起きたらまた1回知らせる
     return 0
 
 
